@@ -1,0 +1,16 @@
+{
+  "name": "sonic-canvas-2d-3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "把音乐凝固成 2D 绘画与 3D 建筑的浏览器生成艺术原型",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

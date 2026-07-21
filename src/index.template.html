@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#05070b">
+  <title>音乐画布 · 2D / 3D 音频生成艺术</title>
+  <style>/*__CSS__*/</style>
+</head>
+<body>
+  <main class="app" id="app" data-light-palette="false">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3.5 14.5c2.2-7.6 4.4 3.5 6.4-4.1 1.7-6.5 3.3 8.7 5.1 1.8 1.6-6 3.1-1.4 5.5-4.7"/></svg>
+        </div>
+        <div class="brand-copy">
+          <div class="brand-title">SONIC CANVAS</div>
+          <div class="brand-subtitle">把一首歌凝固成可观看的形状</div>
+        </div>
+      </div>
+
+      <div class="mode-switch" role="group" aria-label="视觉模式">
+        <button class="mode-button active" data-mode="2d" aria-pressed="true">
+          <svg viewBox="0 0 24 24"><path d="M4 18.5c2.7-6.7 5 1.7 7.4-5.3 2-5.9 4.1 4.1 8.6-5.2"/><path d="M4 4.5h16v15H4z"/></svg>
+          <span>2D 音乐绘画</span>
+        </button>
+        <button class="mode-button" data-mode="3d" aria-pressed="false">
+          <svg viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>
+          <span>3D 音乐建筑</span>
+        </button>
+      </div>
+
+      <div class="top-actions">
+        <button class="ghost-button" id="cameraBtn" hidden>
+          <svg viewBox="0 0 24 24"><path d="M3.5 12s3-5 8.5-5 8.5 5 8.5 5-3 5-8.5 5-8.5-5-8.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          <span id="cameraLabel">前沿跟随</span>
+        </button>
+        <button class="primary-button" id="exportBtn" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19.5h14"/></svg>
+          <span>导出画作</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <div class="stage" id="stage" data-mode="2d">
+        <canvas class="canvas-2d" id="canvas2d"></canvas>
+        <div class="three-container" id="threeContainer"></div>
+
+        <div class="stage-topline">
+          <div class="mode-hint" id="modeHint">时间从左向右，每个声音事件凝固成永久笔触</div>
+          <div class="section-pill" id="sectionPill">段落 1 / 1</div>
+        </div>
+
+        <div class="meters" aria-hidden="true">
+          <div class="meter-row"><div class="meter-label">ENERGY</div><div class="meter-track"><div class="meter-fill" id="energyBar"></div></div></div>
+          <div class="meter-row"><div class="meter-label">BASS</div><div class="meter-track"><div class="meter-fill" id="bassBar"></div></div></div>
+          <div class="meter-row"><div class="meter-label">TREBLE</div><div class="meter-track"><div class="meter-fill" id="trebleBar"></div></div></div>
+        </div>
+
+        <div class="empty-state" id="emptyState">
+          <div class="drop-zone" id="dropZone">
+            <div class="upload-orb">
+              <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/></svg>
+            </div>
+            <h1 class="empty-title">把一首歌放进画布</h1>
+            <p class="empty-copy">系统会先理解节奏、低频、旋律、瞬态与段落，再让音乐从左到右成为一幅画，或在空间中连续生长成一座永久建筑。</p>
+            <div class="empty-actions">
+              <button class="open-button" id="openFileBtn">选择音乐文件</button>
+              <button class="demo-button" id="demoBtn">播放内置示例</button>
+            </div>
+            <div class="supported">MP3 · WAV · M4A · AAC · OGG · FLAC</div>
+          </div>
+        </div>
+
+        <div class="analysis-overlay" id="analysisOverlay" hidden>
+          <div class="analysis-card">
+            <div class="spinner" id="loadingSpinner"></div>
+            <div class="analysis-text" id="analysisText">正在理解歌曲结构…</div>
+            <div class="analysis-track"><div class="analysis-progress" id="analysisProgress"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="inspector">
+        <section class="inspector-section">
+          <div class="inspector-title">当前作品</div>
+          <div class="track-title" id="trackTitle">尚未载入音乐</div>
+          <div class="track-meta" id="trackMeta">上传音频或使用内置示例开始</div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="inspector-title">生成身份</div>
+          <div class="seed-row">
+            <div>
+              <div class="control-label" style="margin:0 0 5px">随机种子</div>
+              <div class="seed-value" id="seedValue">00000000</div>
+            </div>
+            <button class="icon-button small-icon-button" id="regenerateBtn" disabled title="换一个种子重新生成">
+              <svg viewBox="0 0 24 24"><path d="M19 7V3m0 0h-4m4 0-3.2 3.2A7 7 0 1 0 19 12"/></svg>
+            </button>
+          </div>
+          <div class="explain">更换种子会改变笔法、分支与细节，但保留这首歌的段落与能量骨架。</div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="inspector-title">艺术方向</div>
+          <div class="setting">
+            <label class="control-label" for="paletteSelect">色彩体系</label>
+            <div class="select-wrap">
+              <select id="paletteSelect">
+                <option value="aurora">夜色极光</option>
+                <option value="ember">熔岩余烬</option>
+                <option value="porcelain">青瓷墨色</option>
+                <option value="ultraviolet">紫外梦境</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting">
+            <label class="control-label" for="complexity"><span>细节密度</span><span class="control-value" id="complexityValue">1.0</span></label>
+            <input class="range" id="complexity" type="range" min="0.5" max="1.5" step="0.1" value="1">
+            <div class="explain">较低更留白，较高会增加叶片、分支和高频晶体。</div>
+          </div>
+          <div class="setting">
+            <button class="ghost-button camera-button" id="cameraBtnMobile" hidden tabindex="-1"><span>镜头</span></button>
+          </div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="inspector-title">映射规则</div>
+          <div class="explain">时间 → 横向长度 / 生长距离<br>低频 → 主体与地基<br>中频 → 旋律路径<br>高频 → 细节与晶体<br>瞬态 → 节点与笔触<br>段落 → 整体构图转折</div>
+        </section>
+      </aside>
+    </section>
+
+    <footer class="transport">
+      <div class="transport-left">
+        <button class="play-button" id="playBtn" disabled aria-label="播放">
+          <svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5.5v13l10-6.5z"></path></svg>
+        </button>
+        <div class="transport-track">
+          <div class="transport-title" id="transportTitle">音乐画布</div>
+          <div class="transport-meta">空格播放 / 暂停 · M 切换 2D / 3D</div>
+        </div>
+      </div>
+      <div class="transport-center">
+        <div class="time-label" id="currentTime">0:00</div>
+        <input class="timeline" id="timeline" type="range" min="0" max="1000" step="1" value="0" disabled aria-label="播放进度">
+        <div class="time-label" id="duration">0:00</div>
+      </div>
+      <div class="transport-right">
+        <button class="ghost-button" id="replaceBtn">
+          <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/></svg>
+          <span>更换音乐</span>
+        </button>
+        <button class="ghost-button" onclick="document.getElementById('regenerateBtn').click()" aria-label="重新生成">
+          <svg viewBox="0 0 24 24"><path d="M19 7V3m0 0h-4m4 0-3.2 3.2A7 7 0 1 0 19 12"/></svg>
+          <span>重新生成</span>
+        </button>
+      </div>
+    </footer>
+
+    <input id="fileInput" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" hidden>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </main>
+  <script>/*__JS__*/</script>
+</body>
+</html>
