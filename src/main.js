@@ -331,6 +331,28 @@ const PALETTES = {
   },
 };
 
+
+const PAINTING_STYLES = {
+  trace: {
+    order: 1,
+    name: '声纹流线',
+    label: '风格 1 · 声纹流线',
+    description: '完整保留原有生成方式：低频色带、旋律主线、高频细线与瞬态叶片沿时间连续生长。它更接近声音轨迹与生成图案。',
+    hint: '风格 1 · 时间从左向右，声音凝固为流线、色带与叶片',
+    mappingHtml: '时间 → 横向轨迹<br>低频 → 连续色带<br>中频 → 旋律主线<br>高频 → 细线与光点<br>瞬态 → 叶片与节点<br>段落 → 色场转折',
+    exportName: '风格1_声纹流线',
+  },
+  painterly: {
+    order: 2,
+    name: '声色画境',
+    label: '风格 2 · 声色画境',
+    description: '以绘画而不是曲线为目标：音乐逐层沉积为底色、色块、干湿笔触、刮刀印记与飞白；段落先决定构图，音符再落入不同画面区域。',
+    hint: '风格 2 · 音乐逐层沉积为色场、笔触与节奏印记',
+    mappingHtml: '时间 → 画面逐步完成<br>低频 → 底层色块与厚涂<br>中频 / 音高 → 主笔触与落点<br>高频 → 飞白与颜料颗粒<br>瞬态 → 刮刀与书写性重笔<br>段落 → 画面重心、留白与主题形体',
+    exportName: '风格2_声色画境',
+  },
+};
+
 function paletteHsl(palette, feature, progress, sectionIndex, seed, lightShift = 0) {
   const sectionOffset = (randAt(seed, sectionIndex, 91) - 0.5) * 0.14;
   const hue = (palette.baseHue + feature.centroid * palette.hueRange + progress * 0.08 + sectionOffset + 1) % 1;
@@ -347,20 +369,26 @@ class CanvasPainting {
     this.height = 0;
     this.dpr = 1;
     this.prev = null;
+    this.painterPrev = null;
+    this.painterGroundPrev = null;
     this.lastSection = -1;
     this.palette = PALETTES.aurora;
     this.seed = 1;
     this.complexity = 1;
     this.duration = 1;
     this.analysis = null;
+    this.styleKey = 'painterly';
+    this.painterLayouts = [];
   }
 
-  configure({ analysis, duration, seed, palette, complexity }) {
+  configure({ analysis, duration, seed, palette, complexity, paintingStyleKey = 'trace' }) {
     this.analysis = analysis;
     this.duration = Math.max(0.001, duration);
     this.seed = seed;
     this.palette = palette;
     this.complexity = complexity;
+    this.styleKey = PAINTING_STYLES[paintingStyleKey] ? paintingStyleKey : 'trace';
+    this.buildPainterlyLayouts();
   }
 
   resize() {
@@ -379,6 +407,11 @@ class CanvasPainting {
   }
 
   reset() {
+    if (this.styleKey === 'painterly') this.resetPainterly();
+    else this.resetTrace();
+  }
+
+  resetTrace() {
     const ctx = this.ctx;
     const { width: w, height: h, palette } = this;
     ctx.save();
@@ -402,12 +435,109 @@ class CanvasPainting {
     }
     ctx.restore();
     this.prev = null;
+    this.painterPrev = null;
+    this.painterGroundPrev = null;
+    this.lastSection = -1;
+  }
+
+  resetPainterly() {
+    const ctx = this.ctx;
+    const { width: w, height: h, palette } = this;
+    const baseFeature = { energy: 0.32, low: 0.42, mid: 0.40, high: 0.20, centroid: 0.34 };
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+    const base = ctx.createLinearGradient(0, h * 0.08, w, h * 0.92);
+    base.addColorStop(0, palette.bg);
+    base.addColorStop(0.42, palette.bg2);
+    base.addColorStop(1, palette.bg);
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, w, h);
+
+    // A few broad, nearly invisible glazes establish depth before the music starts painting.
+    ctx.globalCompositeOperation = palette.dark ? 'screen' : 'multiply';
+    const glazeCount = 6;
+    for (let i = 0; i < glazeCount; i++) {
+      const cx = randAt(this.seed, i, 610) * w;
+      const cy = (0.12 + randAt(this.seed, i, 611) * 0.76) * h;
+      const radius = Math.max(w, h) * (0.20 + randAt(this.seed, i, 612) * 0.24);
+      const radial = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      radial.addColorStop(0, this.color(baseFeature, cx / Math.max(1, w), i, palette.dark ? 0.045 : 0.030, (randAt(this.seed, i, 613) - 0.5) * 0.13));
+      radial.addColorStop(1, this.color(baseFeature, cx / Math.max(1, w), i, 0));
+      ctx.fillStyle = radial;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // Fine deterministic fibres make the surface read as paper/canvas instead of a display grid.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.lineCap = 'round';
+    const fibreCount = Math.min(520, Math.max(180, Math.round((w * h) / 3300)));
+    for (let i = 0; i < fibreCount; i++) {
+      const x = randAt(this.seed, i, 620) * w;
+      const y = randAt(this.seed, i, 621) * h;
+      const length = 3 + randAt(this.seed, i, 622) * 22;
+      const angle = (randAt(this.seed, i, 623) - 0.5) * 0.34;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+      ctx.lineWidth = 0.35 + randAt(this.seed, i, 624) * 0.55;
+      ctx.strokeStyle = palette.dark
+        ? `rgba(255,255,255,${0.012 + randAt(this.seed, i, 625) * 0.018})`
+        : `rgba(23,31,29,${0.018 + randAt(this.seed, i, 625) * 0.020})`;
+      ctx.stroke();
+    }
+
+    const vignette = ctx.createRadialGradient(w * 0.5, h * 0.48, Math.min(w, h) * 0.15, w * 0.5, h * 0.48, Math.max(w, h) * 0.72);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, palette.dark ? 'rgba(0,0,0,0.19)' : 'rgba(37,45,42,0.08)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+
+    this.prev = null;
+    this.painterPrev = null;
+    this.painterGroundPrev = null;
     this.lastSection = -1;
   }
 
   color(feature, progress, sectionIndex, alpha = 1, lightShift = 0) {
     const { hue, saturation, lightness } = paletteHsl(this.palette, feature, progress, sectionIndex, this.seed, lightShift);
     return `hsla(${Math.round(hue * 360)}, ${Math.round(saturation * 100)}%, ${Math.round(lightness * 100)}%, ${alpha})`;
+  }
+
+  buildPainterlyLayouts() {
+    this.painterLayouts = [];
+    if (!this.analysis?.sections?.length) return;
+    let y = clamp(0.42 + (randAt(this.seed, 0, 680) - 0.5) * 0.20, 0.27, 0.73);
+    for (let i = 0; i < this.analysis.sections.length; i++) {
+      const section = this.analysis.sections[i];
+      const averages = section.averages;
+      const tonalPull = (averages.low - averages.high) * 0.12;
+      const randomDrift = (randAt(this.seed, i, 681) - 0.5) * (0.24 + averages.energy * 0.10);
+      let endY = clamp(y + tonalPull + randomDrift, 0.22, 0.78);
+      if (Math.abs(endY - y) < 0.055) {
+        const direction = randAt(this.seed, i, 682) < 0.5 ? -1 : 1;
+        endY = clamp(endY + direction * (0.07 + randAt(this.seed, i, 683) * 0.08), 0.22, 0.78);
+      }
+      const centerY = clamp((y + endY) * 0.5 + (randAt(this.seed, i, 684) - 0.5) * 0.08, 0.20, 0.80);
+      const side = randAt(this.seed, i, 685) < 0.5 ? -1 : 1;
+      const secondaryY = clamp(centerY + side * (0.17 + randAt(this.seed, i, 686) * 0.19), 0.10, 0.90);
+      const motif = Math.floor(randAt(this.seed, i, 687) * 4);
+      const angleBase = (randAt(this.seed, i, 688) - 0.5) * 0.78 + (averages.mid - 0.5) * 0.26;
+      this.painterLayouts.push({
+        startY: y,
+        endY,
+        centerY,
+        secondaryY,
+        groundY: clamp(0.72 + (randAt(this.seed, i, 691) - 0.5) * 0.13 - averages.low * 0.035, 0.62, 0.84),
+        skyY: clamp(0.24 + (randAt(this.seed, i, 692) - 0.5) * 0.15 - averages.high * 0.025, 0.12, 0.38),
+        motif,
+        angleBase,
+        phase: randAt(this.seed, i, 689) * TAU,
+        scale: 0.84 + averages.energy * 0.38 + randAt(this.seed, i, 690) * 0.16,
+      });
+      y = endY;
+    }
   }
 
   sectionWash(sectionIndex, x, feature) {
@@ -424,7 +554,226 @@ class CanvasPainting {
     ctx.restore();
   }
 
+  organicBlobPath(cx, cy, rx, ry, stepIndex, channel, points = 12) {
+    const ctx = this.ctx;
+    const vertices = [];
+    for (let i = 0; i < points; i++) {
+      const angle = (i / points) * TAU;
+      const radial = 0.78 + randAt(this.seed, stepIndex * 31 + i, channel) * 0.36;
+      vertices.push({
+        x: cx + Math.cos(angle) * rx * radial,
+        y: cy + Math.sin(angle) * ry * radial,
+      });
+    }
+    const firstMid = {
+      x: (vertices[points - 1].x + vertices[0].x) * 0.5,
+      y: (vertices[points - 1].y + vertices[0].y) * 0.5,
+    };
+    ctx.beginPath();
+    ctx.moveTo(firstMid.x, firstMid.y);
+    for (let i = 0; i < points; i++) {
+      const current = vertices[i];
+      const next = vertices[(i + 1) % points];
+      ctx.quadraticCurveTo(current.x, current.y, (current.x + next.x) * 0.5, (current.y + next.y) * 0.5);
+    }
+    ctx.closePath();
+  }
+
+  drawOrganicBlob(cx, cy, rx, ry, feature, progress, sectionIndex, alpha, stepIndex, channel) {
+    const ctx = this.ctx;
+    const layers = this.complexity > 1.15 ? 3 : 2;
+    for (let layer = 0; layer < layers; layer++) {
+      const jitterX = (randAt(this.seed, stepIndex + layer, channel + 1) - 0.5) * rx * 0.20;
+      const jitterY = (randAt(this.seed, stepIndex + layer, channel + 2) - 0.5) * ry * 0.20;
+      const scale = 0.78 + randAt(this.seed, stepIndex + layer, channel + 3) * 0.28;
+      this.organicBlobPath(cx + jitterX, cy + jitterY, rx * scale, ry * scale, stepIndex + layer * 97, channel + 10 + layer * 17, 11 + layer);
+      ctx.fillStyle = this.color(
+        feature,
+        progress,
+        sectionIndex,
+        alpha * (layer === 0 ? 0.64 : 0.38),
+        (randAt(this.seed, stepIndex + layer, channel + 4) - 0.5) * 0.16,
+      );
+      ctx.fill();
+    }
+  }
+
+  drawBristleStroke({ x1, y1, x2, y2, width, curve, feature, progress, sectionIndex, alpha, stepIndex, channel }) {
+    const ctx = this.ctx;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const length = Math.max(0.001, Math.hypot(dx, dy));
+    const nx = -dy / length;
+    const ny = dx / length;
+    const cx1 = lerp(x1, x2, 0.34) + nx * curve;
+    const cy1 = lerp(y1, y2, 0.34) + ny * curve;
+    const cx2 = lerp(x1, x2, 0.70) - nx * curve * 0.45;
+    const cy2 = lerp(y1, y2, 0.70) - ny * curve * 0.45;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(cx1, cy1, cx2, cy2, x2, y2);
+    ctx.lineWidth = width;
+    ctx.strokeStyle = this.color(feature, progress, sectionIndex, alpha * 0.52, -0.06);
+    ctx.stroke();
+
+    const bristles = Math.max(3, Math.round(2.7 + this.complexity * 2.2));
+    for (let i = 0; i < bristles; i++) {
+      const offset = (randAt(this.seed, stepIndex * 13 + i, channel) - 0.5) * width * 0.92;
+      const startGap = randAt(this.seed, stepIndex * 17 + i, channel + 1) * 0.16;
+      const endGap = randAt(this.seed, stepIndex * 19 + i, channel + 2) * 0.12;
+      const sx = lerp(x1, x2, startGap) + nx * offset;
+      const sy = lerp(y1, y2, startGap) + ny * offset;
+      const ex = lerp(x1, x2, 1 - endGap) + nx * offset * 0.55;
+      const ey = lerp(y1, y2, 1 - endGap) + ny * offset * 0.55;
+      const lightShift = (randAt(this.seed, stepIndex * 23 + i, channel + 3) - 0.5) * 0.22;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.bezierCurveTo(
+        lerp(sx, ex, 0.34) + nx * curve * 0.72,
+        lerp(sy, ey, 0.34) + ny * curve * 0.72,
+        lerp(sx, ex, 0.70) - nx * curve * 0.28,
+        lerp(sy, ey, 0.70) - ny * curve * 0.28,
+        ex,
+        ey,
+      );
+      ctx.lineWidth = Math.max(0.45, width * (0.055 + randAt(this.seed, stepIndex * 29 + i, channel + 4) * 0.11));
+      ctx.strokeStyle = this.color(feature, progress, sectionIndex, alpha * (0.28 + randAt(this.seed, stepIndex * 31 + i, channel + 5) * 0.34), lightShift);
+      ctx.stroke();
+    }
+  }
+
+  drawKnifeMark(x, y, angle, length, width, feature, progress, sectionIndex, stepIndex, channel) {
+    const ctx = this.ctx;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const nx = -s;
+    const ny = c;
+    const backX = x - c * length;
+    const backY = y - s * length;
+    const skew = (randAt(this.seed, stepIndex, channel) - 0.5) * width;
+    ctx.beginPath();
+    ctx.moveTo(backX + nx * width * 0.16, backY + ny * width * 0.16);
+    ctx.bezierCurveTo(
+      lerp(backX, x, 0.34) + nx * (width + skew),
+      lerp(backY, y, 0.34) + ny * (width + skew),
+      lerp(backX, x, 0.76) + nx * width * 0.42,
+      lerp(backY, y, 0.76) + ny * width * 0.42,
+      x,
+      y,
+    );
+    ctx.bezierCurveTo(
+      lerp(x, backX, 0.30) - nx * width * 0.58,
+      lerp(y, backY, 0.30) - ny * width * 0.58,
+      lerp(x, backX, 0.76) - nx * width * 0.20,
+      lerp(y, backY, 0.76) - ny * width * 0.20,
+      backX + nx * width * 0.16,
+      backY + ny * width * 0.16,
+    );
+    ctx.closePath();
+    ctx.fillStyle = this.color(feature, progress, sectionIndex, this.palette.dark ? 0.58 : 0.42, 0.10);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(backX + nx * width * 0.13, backY + ny * width * 0.13);
+    ctx.quadraticCurveTo(lerp(backX, x, 0.56) + nx * width * 0.25, lerp(backY, y, 0.56) + ny * width * 0.25, x, y);
+    ctx.lineWidth = Math.max(0.55, width * 0.10);
+    ctx.strokeStyle = this.color(feature, progress, sectionIndex, 0.78, 0.22);
+    ctx.stroke();
+  }
+
+  drawPigmentMassSegment(previous, x, y, feature, progress, sectionIndex, stepIndex) {
+    const ctx = this.ctx;
+    const midX = (previous.x + x) * 0.5;
+    const edgeY = (previous.y + y) * 0.5 + (randAt(this.seed, stepIndex, 795) - 0.5) * (4 + feature.low * 12);
+
+    // Overlapping broad strokes accumulate like an underpainted ground without digital vertical seams.
+    ctx.beginPath();
+    ctx.moveTo(previous.x, previous.y);
+    ctx.quadraticCurveTo(midX, edgeY, x, y);
+    ctx.lineWidth = this.height * (0.055 + feature.low * 0.095 + feature.energy * 0.028);
+    ctx.strokeStyle = this.color(feature, progress, sectionIndex, this.palette.dark ? 0.075 : 0.052, -0.12);
+    ctx.stroke();
+
+    if (stepIndex % 3 === 0) {
+      ctx.beginPath();
+      ctx.moveTo(previous.x, previous.y);
+      ctx.quadraticCurveTo(midX, edgeY, x, y);
+      ctx.lineWidth = 1.0 + feature.low * 3.1 + feature.energy * 1.4;
+      ctx.strokeStyle = this.color(feature, progress, sectionIndex, this.palette.dark ? 0.24 : 0.17, -0.02);
+      ctx.stroke();
+    }
+  }
+  painterlyPosition(feature, progress, stepIndex) {
+    const h = this.height;
+    const layout = this.painterLayouts[feature.sectionIndex] || {
+      startY: 0.46,
+      endY: 0.54,
+      centerY: 0.50,
+      secondaryY: 0.72,
+      groundY: 0.74,
+      skyY: 0.24,
+      motif: 0,
+      angleBase: 0,
+      phase: 0,
+      scale: 1,
+    };
+    const local = feature.sectionPhase;
+    const eased = smoothstep(0, 1, local);
+    const primary = lerp(layout.startY, layout.endY, eased) * h;
+    const secondary = layout.secondaryY * h;
+    const pitchNorm = feature.dominant > 1
+      ? clamp((Math.log2(Math.max(55, feature.dominant)) - Math.log2(55)) / 6)
+      : feature.centroid;
+    const pitchShift = (0.5 - pitchNorm) * h * 0.21;
+    const noise = (valueNoise1D(progress * (8 + this.complexity * 3.2), this.seed, 704 + feature.sectionIndex) - 0.5) * h * 0.14;
+    let y = primary + pitchShift * 0.46 + noise;
+    let angle = layout.angleBase;
+
+    if (layout.motif === 0) {
+      // Landscape: pitch chooses one of several painterly planes rather than tracing one centre line.
+      const upper = clamp(Math.min(primary, secondary) - h * 0.08, h * 0.12, h * 0.42);
+      const middle = clamp(layout.centerY * h, h * 0.28, h * 0.72);
+      const lower = clamp(Math.max(primary, secondary) + h * 0.08, h * 0.54, h * 0.86);
+      if (pitchNorm > 0.64) y = upper + noise * 0.30;
+      else if (pitchNorm < 0.34) y = lower + noise * 0.30;
+      else y = middle + noise * 0.42;
+      y += Math.sin(local * Math.PI * 1.4 + layout.phase) * h * 0.025;
+      angle += (feature.mid - 0.5) * 0.34;
+    } else if (layout.motif === 1) {
+      // Bloom: gestures orbit a compositional centre instead of tracing a graph.
+      const orbit = local * TAU * (0.72 + layout.scale * 0.34) + layout.phase;
+      const radius = h * (0.045 + feature.energy * 0.15) * layout.scale;
+      y = layout.centerY * h + Math.sin(orbit) * radius + pitchShift * 0.30 + noise * 0.48;
+      angle = clamp(Math.cos(orbit) * 0.92 + (feature.centroid - 0.5) * 0.35, -1.15, 1.15);
+    } else if (layout.motif === 2) {
+      // Veils: alternating vertical fields create figure/ground relationships.
+      const weave = 0.5 + 0.5 * Math.sin(local * Math.PI * (2.4 + layout.scale) + layout.phase);
+      y = lerp(primary, secondary, weave * (0.55 + feature.high * 0.28)) + pitchShift * 0.42 + noise * 0.40;
+      angle = clamp(layout.angleBase + (weave - 0.5) * 1.36, -1.20, 1.20);
+    } else {
+      // Archipelago: grouped marks form islands, keeping deliberate empty space between them.
+      const cluster = Math.floor(local * (3 + Math.round(layout.scale * 2)));
+      const chooseSecondary = randAt(this.seed, feature.sectionIndex * 17 + cluster, 706) > 0.54;
+      const clusterY = chooseSecondary ? secondary : primary;
+      y = clusterY + (randAt(this.seed, feature.sectionIndex * 29 + cluster, 707) - 0.5) * h * 0.13 + pitchShift * 0.38;
+      angle = clamp(layout.angleBase + (randAt(this.seed, feature.sectionIndex * 31 + cluster, 708) - 0.5) * 0.92, -1.08, 1.08);
+    }
+
+    return {
+      y: clamp(y, h * 0.09, h * 0.91),
+      secondaryY: clamp(secondary, h * 0.08, h * 0.92),
+      angle,
+      layout,
+    };
+  }
+
   generate(time, feature, stepIndex) {
+    if (this.styleKey === 'painterly') this.generatePainterly(time, feature, stepIndex);
+    else this.generateTrace(time, feature, stepIndex);
+  }
+
+  generateTrace(time, feature, stepIndex) {
     const ctx = this.ctx;
     const w = this.width;
     const h = this.height;
@@ -538,8 +887,198 @@ class CanvasPainting {
     ctx.restore();
     this.prev = { x, y, band, tilt };
   }
-}
 
+  generatePainterly(time, feature, stepIndex) {
+    const ctx = this.ctx;
+    const w = this.width;
+    const h = this.height;
+    if (w < 2 || h < 2) return;
+    const marginX = Math.max(26, w * 0.04);
+    const progress = clamp(time / this.duration);
+    const x = marginX + progress * (w - marginX * 2);
+    const position = this.painterlyPosition(feature, progress, stepIndex);
+    const y = position.y;
+    const layout = position.layout;
+    const composite = this.palette.dark ? 'screen' : 'multiply';
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = composite;
+
+    if (feature.sectionIndex !== this.lastSection) {
+      const openingWidth = Math.max(24, w * (0.035 + feature.energy * 0.025));
+      const openingHeight = h * (0.14 + layout.scale * 0.12);
+      this.drawOrganicBlob(
+        x - openingWidth * 0.36,
+        lerp(y, position.secondaryY, 0.34),
+        openingWidth,
+        openingHeight,
+        feature,
+        progress,
+        feature.sectionIndex,
+        this.palette.dark ? 0.10 : 0.075,
+        stepIndex,
+        720,
+      );
+      this.lastSection = feature.sectionIndex;
+      this.painterPrev = null;
+      this.painterGroundPrev = null;
+    }
+
+    // Bass continuously accumulates as a lower pigment mass, making the result read as a painted field.
+    const groundNoise = (valueNoise1D(progress * (5.5 + this.complexity * 2), this.seed, 790 + feature.sectionIndex) - 0.5) * h * 0.055;
+    const groundY = clamp(layout.groundY * h - feature.low * h * 0.075 + groundNoise, h * 0.53, h * 0.88);
+    if (this.painterGroundPrev && this.painterGroundPrev.sectionIndex === feature.sectionIndex) {
+      this.drawPigmentMassSegment(this.painterGroundPrev, x, groundY, feature, progress, feature.sectionIndex, stepIndex);
+    }
+    this.painterGroundPrev = { x, y: groundY, sectionIndex: feature.sectionIndex };
+
+    // Treble occasionally opens a separate sky field, creating figure/ground rather than one plotted path.
+    const skyStride = Math.max(11, Math.round(24 - this.complexity * 7));
+    if (feature.high > 0.28 && stepIndex % skyStride === 0) {
+      const skyY = layout.skyY * h + (randAt(this.seed, stepIndex, 791) - 0.5) * h * 0.12;
+      this.drawOrganicBlob(
+        Math.max(marginX, x - (24 + feature.high * 38) * 0.44),
+        skyY,
+        24 + feature.high * 38,
+        18 + feature.high * 40,
+        feature,
+        progress,
+        feature.sectionIndex,
+        this.palette.dark ? 0.075 : 0.052,
+        stepIndex,
+        792,
+      );
+    }
+
+    // Slow colour fields are the underpainting. They build atmosphere without becoming a waveform.
+    const washStride = Math.max(8, Math.round(19 - this.complexity * 6));
+    if (stepIndex % washStride === 0) {
+      const rx = 26 + feature.energy * 54 + feature.low * 28;
+      const ry = 30 + feature.mid * 58 + feature.high * 24;
+      const washY = lerp(y, position.secondaryY, randAt(this.seed, stepIndex, 721) * (0.34 + feature.high * 0.38));
+      this.drawOrganicBlob(
+        Math.max(marginX, x - rx * 0.44),
+        washY,
+        rx,
+        ry,
+        feature,
+        progress,
+        feature.sectionIndex,
+        this.palette.dark ? 0.105 : 0.072,
+        stepIndex,
+        722,
+      );
+    }
+
+    // Bass and overall energy lay down broad, dry-brush masses.
+    const massStride = Math.max(2, Math.round(5.2 - this.complexity * 2.1));
+    if (stepIndex % massStride === 0 && (feature.low > 0.20 || feature.energy > 0.30)) {
+      const length = (18 + feature.low * 58 + feature.energy * 22) * layout.scale;
+      const width = (5.0 + feature.low * 20 + feature.energy * 9) * (0.78 + this.complexity * 0.24);
+      const angle = clamp((randAt(this.seed, stepIndex, 730) - 0.5) * 0.46 + (feature.mid - 0.5) * 0.16, -0.48, 0.48);
+      this.drawBristleStroke({
+        x1: Math.max(marginX, x - Math.cos(angle) * length),
+        y1: groundY - Math.sin(angle) * length,
+        x2: x,
+        y2: groundY,
+        width,
+        curve: (randAt(this.seed, stepIndex, 731) - 0.5) * width * 1.8,
+        feature,
+        progress,
+        sectionIndex: feature.sectionIndex,
+        alpha: this.palette.dark ? 0.58 : 0.46,
+        stepIndex,
+        channel: 732,
+      });
+    }
+
+    // Midrange and pitch become discrete painterly gestures, not a single connected centre line.
+    const gestureStride = Math.max(1, Math.round(3.4 - this.complexity * 1.55));
+    if (stepIndex % gestureStride === 0) {
+      const length = 9 + feature.mid * 28 + feature.onset * 18 + feature.centroid * 7;
+      const width = 2.2 + feature.energy * 7.0 + feature.mid * 4.6;
+      const angle = clamp(position.angle + (feature.centroid - 0.5) * 0.42 + (randAt(this.seed, stepIndex, 740) - 0.5) * 0.34, -1.22, 1.22);
+      this.drawBristleStroke({
+        x1: Math.max(marginX, x - Math.cos(angle) * length),
+        y1: y - Math.sin(angle) * length,
+        x2: x,
+        y2: y,
+        width,
+        curve: (feature.mid - 0.5) * width * 1.8 + (randAt(this.seed, stepIndex, 741) - 0.5) * width,
+        feature,
+        progress,
+        sectionIndex: feature.sectionIndex,
+        alpha: this.palette.dark ? 0.78 : 0.62,
+        stepIndex,
+        channel: 742,
+      });
+
+      // Harmonic echoes occupy a second compositional area and keep the canvas from collapsing into one path.
+      const echoChance = (0.08 + feature.mid * 0.18 + feature.high * 0.08) * this.complexity;
+      if (randAt(this.seed, stepIndex, 748) < echoChance) {
+        const echoY = lerp(position.secondaryY, y, 0.18 + randAt(this.seed, stepIndex, 749) * 0.28);
+        const echoLength = length * (0.46 + randAt(this.seed, stepIndex, 750) * 0.30);
+        const echoAngle = clamp(-angle * 0.62 + (randAt(this.seed, stepIndex, 751) - 0.5) * 0.34, -1.18, 1.18);
+        this.drawBristleStroke({
+          x1: Math.max(marginX, x - Math.cos(echoAngle) * echoLength),
+          y1: echoY - Math.sin(echoAngle) * echoLength,
+          x2: x,
+          y2: echoY,
+          width: Math.max(0.9, width * 0.48),
+          curve: (randAt(this.seed, stepIndex, 752) - 0.5) * width,
+          feature,
+          progress,
+          sectionIndex: feature.sectionIndex,
+          alpha: this.palette.dark ? 0.40 : 0.30,
+          stepIndex,
+          channel: 753,
+        });
+      }
+    }
+
+    // Strong transients read as decisive palette-knife/calligraphic marks.
+    const accentSignal = feature.onset * (0.82 + this.complexity * 0.20) + feature.energy * 0.09;
+    if (accentSignal > 0.31 && randAt(this.seed, stepIndex, 760) < accentSignal) {
+      const direction = randAt(this.seed, stepIndex, 761) < 0.5 ? -1 : 1;
+      const angle = clamp(position.angle + direction * (0.32 + randAt(this.seed, stepIndex, 762) * 0.72), -1.30, 1.30);
+      this.drawKnifeMark(
+        x,
+        y,
+        angle,
+        12 + feature.onset * 46 + feature.high * 16,
+        2.4 + feature.energy * 8.8,
+        feature,
+        progress,
+        feature.sectionIndex,
+        stepIndex,
+        763,
+      );
+    }
+
+    // High frequencies add restrained spatter and dry-brush flecks around existing masses.
+    if (feature.high > 0.48 && randAt(this.seed, stepIndex, 770) < feature.high * 0.34 * this.complexity) {
+      const count = 1 + Math.floor(feature.high * (2.2 + this.complexity));
+      for (let i = 0; i < count; i++) {
+        const spreadX = 8 + feature.high * 28;
+        const spreadY = 18 + feature.high * 64;
+        const px = x - randAt(this.seed, stepIndex * 11 + i, 771) * spreadX;
+        const fleckAnchor = randAt(this.seed, stepIndex * 19 + i, 774) < 0.58 ? layout.skyY * h : position.secondaryY;
+        const py = fleckAnchor + (randAt(this.seed, stepIndex * 13 + i, 772) - 0.5) * spreadY;
+        const radius = 0.45 + randAt(this.seed, stepIndex * 17 + i, 773) * (1.2 + feature.high * 1.7);
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, TAU);
+        ctx.fillStyle = this.color(feature, progress, feature.sectionIndex, 0.30 + feature.high * 0.30, 0.16);
+        ctx.fill();
+      }
+    }
+
+
+    ctx.restore();
+    this.painterPrev = { x, y, sectionIndex: feature.sectionIndex };
+  }
+}
 class Sculpture3D {
   constructor(container) {
     this.container = container;
@@ -974,6 +1513,9 @@ const els = {
   seedValue: document.querySelector('#seedValue'),
   regenerateBtn: document.querySelector('#regenerateBtn'),
   paletteSelect: document.querySelector('#paletteSelect'),
+  paintingStyleSelect: document.querySelector('#paintingStyleSelect'),
+  paintingStyleSetting: document.querySelector('#paintingStyleSetting'),
+  paintingStyleDescription: document.querySelector('#paintingStyleDescription'),
   complexity: document.querySelector('#complexity'),
   complexityValue: document.querySelector('#complexityValue'),
   cameraBtn: document.querySelector('#cameraBtn'),
@@ -984,10 +1526,12 @@ const els = {
   analysisText: document.querySelector('#analysisText'),
   analysisProgress: document.querySelector('#analysisProgress'),
   sectionPill: document.querySelector('#sectionPill'),
+  stylePill: document.querySelector('#stylePill'),
   energyBar: document.querySelector('#energyBar'),
   bassBar: document.querySelector('#bassBar'),
   trebleBar: document.querySelector('#trebleBar'),
   modeHint: document.querySelector('#modeHint'),
+  mappingRules: document.querySelector('#mappingRules'),
   toast: document.querySelector('#toast'),
   loadingSpinner: document.querySelector('#loadingSpinner'),
 };
@@ -1008,6 +1552,7 @@ const state = {
   mode: '2d',
   seed: Math.floor(Math.random() * 0xffffffff) >>> 0,
   paletteKey: 'aurora',
+  paintingStyleKey: 'painterly',
   complexity: 1,
   visualStep: 0.09,
   generatedStep: -1,
@@ -1127,6 +1672,7 @@ function configureVisuals() {
     seed: state.seed,
     palette: PALETTES[state.paletteKey],
     complexity: state.complexity,
+    paintingStyleKey: state.paintingStyleKey,
     stepDuration: state.visualStep,
   };
   painting.configure(config);
@@ -1209,6 +1755,13 @@ function updateFeatureUI(time) {
   els.sectionPill.textContent = `段落 ${f.sectionIndex + 1} / ${state.analysis.sections.length}`;
 }
 
+function updatePaintingStyleUI() {
+  const style = PAINTING_STYLES[state.paintingStyleKey] || PAINTING_STYLES.trace;
+  if (els.paintingStyleSelect) els.paintingStyleSelect.value = state.paintingStyleKey;
+  if (els.paintingStyleDescription) els.paintingStyleDescription.textContent = style.description;
+  els.stage.dataset.paintingStyle = state.paintingStyleKey;
+}
+
 function updateModeUI() {
   if (state.mode === '3d' && !webglAvailable) {
     state.mode = '2d';
@@ -1220,14 +1773,23 @@ function updateModeUI() {
     button.setAttribute('aria-pressed', String(active));
   }
   els.stage.dataset.mode = state.mode;
-  els.modeHint.textContent = state.mode === '2d'
-    ? '时间从左向右，每个声音事件凝固成永久笔触'
-    : '结构沿时间连续生长，生成后不移动、不消失';
+  const paintingStyle = PAINTING_STYLES[state.paintingStyleKey] || PAINTING_STYLES.trace;
+  if (state.mode === '2d') {
+    els.modeHint.textContent = paintingStyle.hint;
+    els.stylePill.textContent = paintingStyle.label;
+    els.mappingRules.innerHTML = paintingStyle.mappingHtml;
+    els.paintingStyleSetting.hidden = false;
+  } else {
+    els.modeHint.textContent = '结构沿时间连续生长，生成后不移动、不消失';
+    els.stylePill.textContent = '3D · 音乐建筑';
+    els.mappingRules.innerHTML = '时间 → 生长距离<br>低频 → 主体与地基<br>中频 → 空间路径<br>高频 → 分支与晶体<br>瞬态 → 节点与结构重音<br>段落 → 建筑转折与空间环';
+    els.paintingStyleSetting.hidden = true;
+  }
   els.cameraBtn.hidden = state.mode !== '3d' || !webglAvailable;
   els.exportBtn.querySelector('span').textContent = state.mode === '2d' ? '导出画作' : '导出视图';
+  updatePaintingStyleUI();
   if (state.mode === '3d') sculpture.resize();
 }
-
 function updateSeedUI() {
   els.seedValue.textContent = state.seed.toString(16).toUpperCase().padStart(8, '0');
 }
@@ -1447,7 +2009,8 @@ async function exportArtwork() {
   const baseName = (state.fileName || '音乐画布').replace(/\.[^/.]+$/, '').replace(/[\\/:*?"<>|]/g, '_');
   if (state.mode === '2d') {
     const blob = await new Promise((resolve) => els.canvas2d.toBlob(resolve, 'image/png'));
-    downloadBlob(blob, `${baseName}_2D_${els.seedValue.textContent}.png`);
+    const style = PAINTING_STYLES[state.paintingStyleKey] || PAINTING_STYLES.trace;
+    downloadBlob(blob, `${baseName}_2D_${style.exportName}_${els.seedValue.textContent}.png`);
   } else {
     const blob = await sculpture.exportPng();
     downloadBlob(blob, `${baseName}_3D_${els.seedValue.textContent}.png`);
@@ -1477,6 +2040,24 @@ function bindEvents() {
       updateModeUI();
     });
   }
+
+  els.paintingStyleSelect.addEventListener('change', async () => {
+    const nextStyle = els.paintingStyleSelect.value;
+    if (!PAINTING_STYLES[nextStyle] || nextStyle === state.paintingStyleKey) return;
+    const wasPlaying = state.isPlaying;
+    if (wasPlaying) pause();
+    state.paintingStyleKey = nextStyle;
+    updateModeUI();
+    if (state.analysis) {
+      configureVisuals();
+      await rebuildTo(state.currentTime, state.duration > 600);
+    } else {
+      painting.styleKey = nextStyle;
+      painting.reset();
+    }
+    if (wasPlaying) await play();
+    toast(`已切换到${PAINTING_STYLES[nextStyle].label}`);
+  });
 
   els.paletteSelect.addEventListener('change', async () => {
     if (!PALETTES[els.paletteSelect.value]) return;
@@ -1576,6 +2157,7 @@ async function init() {
   }
   updateSeedUI();
   updatePlayUI();
+  updatePaintingStyleUI();
   updateModeUI();
   updateCameraModeUI();
   painting.resize();

@@ -49,8 +49,11 @@
         <div class="three-container" id="threeContainer"></div>
 
         <div class="stage-topline">
-          <div class="mode-hint" id="modeHint">时间从左向右，每个声音事件凝固成永久笔触</div>
-          <div class="section-pill" id="sectionPill">段落 1 / 1</div>
+          <div class="mode-hint" id="modeHint">风格 2 · 音乐逐层沉积为色场、笔触与节奏印记</div>
+          <div class="stage-pills">
+            <div class="style-pill" id="stylePill">风格 2 · 声色画境</div>
+            <div class="section-pill" id="sectionPill">段落 1 / 1</div>
+          </div>
         </div>
 
         <div class="meters" aria-hidden="true">
@@ -106,6 +109,16 @@
 
         <section class="inspector-section">
           <div class="inspector-title">艺术方向</div>
+          <div class="setting" id="paintingStyleSetting">
+            <label class="control-label" for="paintingStyleSelect">2D 创作语言</label>
+            <div class="select-wrap">
+              <select id="paintingStyleSelect">
+                <option value="trace">风格 1 · 声纹流线</option>
+                <option value="painterly" selected>风格 2 · 声色画境</option>
+              </select>
+            </div>
+            <div class="explain" id="paintingStyleDescription">以绘画而不是曲线为目标：音乐逐层沉积为底色、色块、干湿笔触、刮刀印记与飞白。</div>
+          </div>
           <div class="setting">
             <label class="control-label" for="paletteSelect">色彩体系</label>
             <div class="select-wrap">
@@ -120,7 +133,7 @@
           <div class="setting">
             <label class="control-label" for="complexity"><span>细节密度</span><span class="control-value" id="complexityValue">1.0</span></label>
             <input class="range" id="complexity" type="range" min="0.5" max="1.5" step="0.1" value="1">
-            <div class="explain">较低更留白，较高会增加叶片、分支和高频晶体。</div>
+            <div class="explain">较低更留白；较高会增加笔触、叶片、分支与高频细节。</div>
           </div>
           <div class="setting">
             <button class="ghost-button camera-button" id="cameraBtnMobile" hidden tabindex="-1"><span>镜头</span></button>
@@ -129,7 +142,7 @@
 
         <section class="inspector-section">
           <div class="inspector-title">映射规则</div>
-          <div class="explain">时间 → 横向长度 / 生长距离<br>低频 → 主体与地基<br>中频 → 旋律路径<br>高频 → 细节与晶体<br>瞬态 → 节点与笔触<br>段落 → 整体构图转折</div>
+          <div class="explain" id="mappingRules">时间 → 画面逐步完成<br>低频 → 底层色块与厚涂<br>中频 / 音高 → 主笔触与落点<br>高频 → 飞白与颜料颗粒<br>瞬态 → 刮刀与书写性重笔<br>段落 → 画面重心、留白与主题形体</div>
         </section>
       </aside>
     </section>
