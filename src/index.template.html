@@ -49,9 +49,9 @@
         <div class="three-container" id="threeContainer"></div>
 
         <div class="stage-topline">
-          <div class="mode-hint" id="modeHint">风格 2 · 音乐逐层沉积为色场、笔触与节奏印记</div>
+          <div class="mode-hint" id="modeHint">风格 2 · 每个段落成为一幕风景，音乐从左向右完成整幅画卷</div>
           <div class="stage-pills">
-            <div class="style-pill" id="stylePill">风格 2 · 声色画境</div>
+            <div class="style-pill" id="stylePill">风格 2 · 声景画卷</div>
             <div class="section-pill" id="sectionPill">段落 1 / 1</div>
           </div>
         </div>
@@ -114,10 +114,20 @@
             <div class="select-wrap">
               <select id="paintingStyleSelect">
                 <option value="trace">风格 1 · 声纹流线</option>
-                <option value="painterly" selected>风格 2 · 声色画境</option>
+                <option value="painterly" selected>风格 2 · 声景画卷</option>
               </select>
             </div>
-            <div class="explain" id="paintingStyleDescription">以绘画而不是曲线为目标：音乐逐层沉积为底色、色块、干湿笔触、刮刀印记与飞白。</div>
+            <div class="explain" id="paintingStyleDescription">把歌曲组织成一幅横向展开的抽象风景画：段落成为远山、树林、水面或亭廊。</div>
+          </div>
+          <div class="setting" id="sculptureStyleSetting" hidden>
+            <label class="control-label" for="sculptureStyleSelect">3D 建筑语言</label>
+            <div class="select-wrap">
+              <select id="sculptureStyleSelect">
+                <option value="growth">风格 1 · 生长脉络</option>
+                <option value="sanctuary" selected>风格 2 · 共鸣殿堂</option>
+              </select>
+            </div>
+            <div class="explain" id="sculptureStyleDescription">把歌曲建造成一条可进入的音乐殿堂：地基、柱廊、门庭和光的穹顶沿时间连续完成。</div>
           </div>
           <div class="setting">
             <label class="control-label" for="paletteSelect">色彩体系</label>
@@ -133,7 +143,7 @@
           <div class="setting">
             <label class="control-label" for="complexity"><span>细节密度</span><span class="control-value" id="complexityValue">1.0</span></label>
             <input class="range" id="complexity" type="range" min="0.5" max="1.5" step="0.1" value="1">
-            <div class="explain">较低更留白；较高会增加笔触、叶片、分支与高频细节。</div>
+            <div class="explain">较低更留白；较高会增加风景笔触、建筑构件与高频细节。</div>
           </div>
           <div class="setting">
             <button class="ghost-button camera-button" id="cameraBtnMobile" hidden tabindex="-1"><span>镜头</span></button>
@@ -142,7 +152,7 @@
 
         <section class="inspector-section">
           <div class="inspector-title">映射规则</div>
-          <div class="explain" id="mappingRules">时间 → 画面逐步完成<br>低频 → 底层色块与厚涂<br>中频 / 音高 → 主笔触与落点<br>高频 → 飞白与颜料颗粒<br>瞬态 → 刮刀与书写性重笔<br>段落 → 画面重心、留白与主题形体</div>
+          <div class="explain" id="mappingRules">时间 → 横向画卷逐步展开<br>低频 → 地形、山体与前景厚度<br>中频 / 音高 → 树木、建筑与主体位置<br>高频 → 云气、飞鸟与天空纹理<br>瞬态 → 山峰、树干、门廊与书写性重笔<br>段落 → 一幕独立风景与视觉焦点</div>
         </section>
       </aside>
     </section>

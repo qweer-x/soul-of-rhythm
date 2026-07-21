@@ -337,19 +337,40 @@ const PAINTING_STYLES = {
     order: 1,
     name: '声纹流线',
     label: '风格 1 · 声纹流线',
-    description: '完整保留原有生成方式：低频色带、旋律主线、高频细线与瞬态叶片沿时间连续生长。它更接近声音轨迹与生成图案。',
+    description: '完整保留最初的生成方式：低频色带、旋律主线、高频细线与瞬态叶片沿时间连续生长，更接近声音轨迹与生成图案。',
     hint: '风格 1 · 时间从左向右，声音凝固为流线、色带与叶片',
     mappingHtml: '时间 → 横向轨迹<br>低频 → 连续色带<br>中频 → 旋律主线<br>高频 → 细线与光点<br>瞬态 → 叶片与节点<br>段落 → 色场转折',
     exportName: '风格1_声纹流线',
   },
   painterly: {
     order: 2,
-    name: '声色画境',
-    label: '风格 2 · 声色画境',
-    description: '以绘画而不是曲线为目标：音乐逐层沉积为底色、色块、干湿笔触、刮刀印记与飞白；段落先决定构图，音符再落入不同画面区域。',
-    hint: '风格 2 · 音乐逐层沉积为色场、笔触与节奏印记',
-    mappingHtml: '时间 → 画面逐步完成<br>低频 → 底层色块与厚涂<br>中频 / 音高 → 主笔触与落点<br>高频 → 飞白与颜料颗粒<br>瞬态 → 刮刀与书写性重笔<br>段落 → 画面重心、留白与主题形体',
-    exportName: '风格2_声色画境',
+    name: '声景画卷',
+    label: '风格 2 · 声景画卷',
+    description: '把歌曲组织成一幅横向展开的抽象风景画：段落成为远山、树林、水面或亭廊，低中高频分别沉积为地景、主体与天空细节。',
+    hint: '风格 2 · 每个段落成为一幕风景，音乐从左向右完成整幅画卷',
+    mappingHtml: '时间 → 横向画卷逐步展开<br>低频 → 地形、山体与前景厚度<br>中频 / 音高 → 树木、建筑与主体位置<br>高频 → 云气、飞鸟与天空纹理<br>瞬态 → 山峰、树干、门廊与书写性重笔<br>段落 → 一幕独立风景与视觉焦点',
+    exportName: '风格2_声景画卷',
+  },
+};
+
+const SCULPTURE_STYLES = {
+  growth: {
+    order: 1,
+    name: '生长脉络',
+    label: '风格 1 · 生长脉络',
+    description: '完整保留原有 3D 生成方式：音乐沿一条空间脉络连续生长，分支、晶体、节点和段落环生成后永久凝固。',
+    hint: '风格 1 · 音乐沿空间脉络连续生长，所有结构永久凝固',
+    mappingHtml: '时间 → 生长距离<br>低频 → 主干厚度<br>中频 → 空间路径<br>高频 → 分支与晶体<br>瞬态 → 节点与结构重音<br>段落 → 转折与空间环',
+    exportName: '风格1_生长脉络',
+  },
+  sanctuary: {
+    order: 2,
+    name: '共鸣殿堂',
+    label: '风格 2 · 共鸣殿堂',
+    description: '把歌曲建造成一条可进入的音乐殿堂：低频铺设地基，中频抬起柱廊与穹顶，高频生成光片与悬挂晶体，段落成为连续厅室。',
+    hint: '风格 2 · 音乐逐步建成地基、柱廊、门庭与光的穹顶',
+    mappingHtml: '时间 → 建筑轴线与厅室深度<br>低频 → 地基、台阶与殿堂宽度<br>中频 / 音高 → 柱高、穹顶与空间比例<br>高频 → 光片、悬晶与细部<br>瞬态 → 门庭、横梁、祭台与结构重音<br>段落 → 一座新厅室与入口门廊',
+    exportName: '风格2_共鸣殿堂',
   },
 };
 
@@ -364,13 +385,24 @@ function paletteHsl(palette, feature, progress, sectionIndex, seed, lightShift =
 class CanvasPainting {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.displayCtx = canvas.getContext('2d', { alpha: false });
+    this.ctx = this.displayCtx;
+    this.baseCanvas = document.createElement('canvas');
+    this.terrainCanvas = document.createElement('canvas');
+    this.detailCanvas = document.createElement('canvas');
+    this.baseCtx = this.baseCanvas.getContext('2d', { alpha: false });
+    this.terrainCtx = this.terrainCanvas.getContext('2d');
+    this.detailCtx = this.detailCanvas.getContext('2d');
     this.width = 0;
     this.height = 0;
     this.dpr = 1;
     this.prev = null;
     this.painterPrev = null;
     this.painterGroundPrev = null;
+    this.painterLastSubjectX = -Infinity;
+    this.painterLastCloudX = -Infinity;
+    this.painterLastAccentX = -Infinity;
+    this.painterLastBirdX = -Infinity;
     this.lastSection = -1;
     this.palette = PALETTES.aurora;
     this.seed = 1;
@@ -379,6 +411,7 @@ class CanvasPainting {
     this.analysis = null;
     this.styleKey = 'painterly';
     this.painterLayouts = [];
+    this.painterTerrainPoints = [];
   }
 
   configure({ analysis, duration, seed, palette, complexity, paintingStyleKey = 'trace' }) {
@@ -400,9 +433,18 @@ class CanvasPainting {
     this.width = width;
     this.height = height;
     this.dpr = dpr;
-    this.canvas.width = Math.floor(width * dpr);
-    this.canvas.height = Math.floor(height * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pixelWidth = Math.floor(width * dpr);
+    const pixelHeight = Math.floor(height * dpr);
+    this.canvas.width = pixelWidth;
+    this.canvas.height = pixelHeight;
+    for (const layer of [this.baseCanvas, this.terrainCanvas, this.detailCanvas]) {
+      layer.width = pixelWidth;
+      layer.height = pixelHeight;
+    }
+    for (const context of [this.displayCtx, this.baseCtx, this.terrainCtx, this.detailCtx]) {
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    this.ctx = this.styleKey === 'painterly' ? this.detailCtx : this.displayCtx;
     return true;
   }
 
@@ -412,6 +454,7 @@ class CanvasPainting {
   }
 
   resetTrace() {
+    this.ctx = this.displayCtx;
     const ctx = this.ctx;
     const { width: w, height: h, palette } = this;
     ctx.save();
@@ -437,67 +480,106 @@ class CanvasPainting {
     this.prev = null;
     this.painterPrev = null;
     this.painterGroundPrev = null;
+    this.painterLastSubjectX = -Infinity;
+    this.painterLastCloudX = -Infinity;
+    this.painterLastAccentX = -Infinity;
+    this.painterLastBirdX = -Infinity;
+    this.painterTerrainPoints = [];
     this.lastSection = -1;
   }
 
   resetPainterly() {
-    const ctx = this.ctx;
     const { width: w, height: h, palette } = this;
-    const baseFeature = { energy: 0.32, low: 0.42, mid: 0.40, high: 0.20, centroid: 0.34 };
+    const baseFeature = { energy: 0.32, low: 0.40, mid: 0.36, high: 0.22, centroid: 0.34 };
+    for (const context of [this.terrainCtx, this.detailCtx]) {
+      context.save();
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      context.restore();
+      context.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    }
+    this.ctx = this.baseCtx;
+    const ctx = this.ctx;
     ctx.save();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    const base = ctx.createLinearGradient(0, h * 0.08, w, h * 0.92);
-    base.addColorStop(0, palette.bg);
-    base.addColorStop(0.42, palette.bg2);
-    base.addColorStop(1, palette.bg);
+    const base = ctx.createLinearGradient(0, 0, 0, h);
+    base.addColorStop(0, palette.dark ? palette.bg2 : palette.bg);
+    base.addColorStop(0.58, palette.bg);
+    base.addColorStop(1, palette.dark ? '#05070b' : palette.bg2);
     ctx.fillStyle = base;
     ctx.fillRect(0, 0, w, h);
 
-    // A few broad, nearly invisible glazes establish depth before the music starts painting.
-    ctx.globalCompositeOperation = palette.dark ? 'screen' : 'multiply';
-    const glazeCount = 6;
-    for (let i = 0; i < glazeCount; i++) {
-      const cx = randAt(this.seed, i, 610) * w;
-      const cy = (0.12 + randAt(this.seed, i, 611) * 0.76) * h;
-      const radius = Math.max(w, h) * (0.20 + randAt(this.seed, i, 612) * 0.24);
-      const radial = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-      radial.addColorStop(0, this.color(baseFeature, cx / Math.max(1, w), i, palette.dark ? 0.045 : 0.030, (randAt(this.seed, i, 613) - 0.5) * 0.13));
-      radial.addColorStop(1, this.color(baseFeature, cx / Math.max(1, w), i, 0));
-      ctx.fillStyle = radial;
-      ctx.fillRect(0, 0, w, h);
+    // A single calm underpainting anchors the composition. It is laid down once,
+    // so the evolving song never turns into a stack of vertical spectrum bars.
+    const groundWash = ctx.createLinearGradient(0, h * 0.48, 0, h);
+    groundWash.addColorStop(0, this.paintColor(baseFeature, 0.18, 0, 0, 0.04, 0.48));
+    groundWash.addColorStop(0.28, this.paintColor(baseFeature, 0.34, 0, palette.dark ? 0.055 : 0.035, -0.10, 0.52));
+    groundWash.addColorStop(1, this.paintColor(baseFeature, 0.76, 0, palette.dark ? 0.24 : 0.14, -0.18, 0.46));
+    ctx.fillStyle = groundWash;
+    ctx.fillRect(0, h * 0.46, w, h * 0.54);
+
+    ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 5; i++) {
+      const y = h * (0.16 + i * 0.16 + (randAt(this.seed, i, 610) - 0.5) * 0.035);
+      const gradient = ctx.createLinearGradient(0, y, w, y + h * 0.05);
+      gradient.addColorStop(0, this.paintColor(baseFeature, 0, i, 0));
+      gradient.addColorStop(0.28, this.paintColor(baseFeature, 0.28, i, palette.dark ? 0.045 : 0.030, -0.08 + i * 0.018));
+      gradient.addColorStop(0.72, this.paintColor(baseFeature, 0.72, i, palette.dark ? 0.035 : 0.024, 0.03));
+      gradient.addColorStop(1, this.paintColor(baseFeature, 1, i, 0));
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, y - h * 0.05, w, h * 0.12);
     }
 
-    // Fine deterministic fibres make the surface read as paper/canvas instead of a display grid.
-    ctx.globalCompositeOperation = 'source-over';
+    const fibreCount = Math.min(680, Math.max(230, Math.round((w * h) / 2500)));
     ctx.lineCap = 'round';
-    const fibreCount = Math.min(520, Math.max(180, Math.round((w * h) / 3300)));
     for (let i = 0; i < fibreCount; i++) {
       const x = randAt(this.seed, i, 620) * w;
       const y = randAt(this.seed, i, 621) * h;
-      const length = 3 + randAt(this.seed, i, 622) * 22;
-      const angle = (randAt(this.seed, i, 623) - 0.5) * 0.34;
+      const length = 2 + randAt(this.seed, i, 622) * 18;
+      const angle = (randAt(this.seed, i, 623) - 0.5) * 0.26;
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
-      ctx.lineWidth = 0.35 + randAt(this.seed, i, 624) * 0.55;
+      ctx.lineWidth = 0.25 + randAt(this.seed, i, 624) * 0.48;
       ctx.strokeStyle = palette.dark
-        ? `rgba(255,255,255,${0.012 + randAt(this.seed, i, 625) * 0.018})`
-        : `rgba(23,31,29,${0.018 + randAt(this.seed, i, 625) * 0.020})`;
+        ? `rgba(255,255,255,${0.009 + randAt(this.seed, i, 625) * 0.015})`
+        : `rgba(30,36,33,${0.012 + randAt(this.seed, i, 625) * 0.018})`;
       ctx.stroke();
     }
 
-    const vignette = ctx.createRadialGradient(w * 0.5, h * 0.48, Math.min(w, h) * 0.15, w * 0.5, h * 0.48, Math.max(w, h) * 0.72);
+    const vignette = ctx.createRadialGradient(w * 0.52, h * 0.45, Math.min(w, h) * 0.16, w * 0.52, h * 0.45, Math.max(w, h) * 0.74);
     vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, palette.dark ? 'rgba(0,0,0,0.19)' : 'rgba(37,45,42,0.08)');
+    vignette.addColorStop(1, palette.dark ? 'rgba(0,0,0,0.20)' : 'rgba(35,42,39,0.075)');
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
 
+    for (const layout of this.painterLayouts) layout.landmarkDrawn = false;
     this.prev = null;
     this.painterPrev = null;
     this.painterGroundPrev = null;
+    this.painterLastSubjectX = -Infinity;
+    this.painterLastCloudX = -Infinity;
+    this.painterLastAccentX = -Infinity;
+    this.painterLastBirdX = -Infinity;
+    this.painterTerrainPoints = [];
     this.lastSection = -1;
+    this.ctx = this.detailCtx;
+    this.composePainterly();
+  }
+
+  composePainterly() {
+    const ctx = this.displayCtx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.drawImage(this.baseCanvas, 0, 0);
+    ctx.drawImage(this.terrainCanvas, 0, 0);
+    ctx.drawImage(this.detailCanvas, 0, 0);
+    ctx.restore();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.ctx = this.detailCtx;
   }
 
   color(feature, progress, sectionIndex, alpha = 1, lightShift = 0) {
@@ -508,36 +590,53 @@ class CanvasPainting {
   buildPainterlyLayouts() {
     this.painterLayouts = [];
     if (!this.analysis?.sections?.length) return;
-    let y = clamp(0.42 + (randAt(this.seed, 0, 680) - 0.5) * 0.20, 0.27, 0.73);
+    let horizon = clamp(0.57 + (randAt(this.seed, 0, 680) - 0.5) * 0.09, 0.49, 0.66);
+    let ground = clamp(0.79 + (randAt(this.seed, 0, 681) - 0.5) * 0.05, 0.72, 0.84);
+
     for (let i = 0; i < this.analysis.sections.length; i++) {
       const section = this.analysis.sections[i];
-      const averages = section.averages;
-      const tonalPull = (averages.low - averages.high) * 0.12;
-      const randomDrift = (randAt(this.seed, i, 681) - 0.5) * (0.24 + averages.energy * 0.10);
-      let endY = clamp(y + tonalPull + randomDrift, 0.22, 0.78);
-      if (Math.abs(endY - y) < 0.055) {
-        const direction = randAt(this.seed, i, 682) < 0.5 ? -1 : 1;
-        endY = clamp(endY + direction * (0.07 + randAt(this.seed, i, 683) * 0.08), 0.22, 0.78);
-      }
-      const centerY = clamp((y + endY) * 0.5 + (randAt(this.seed, i, 684) - 0.5) * 0.08, 0.20, 0.80);
-      const side = randAt(this.seed, i, 685) < 0.5 ? -1 : 1;
-      const secondaryY = clamp(centerY + side * (0.17 + randAt(this.seed, i, 686) * 0.19), 0.10, 0.90);
-      const motif = Math.floor(randAt(this.seed, i, 687) * 4);
-      const angleBase = (randAt(this.seed, i, 688) - 0.5) * 0.78 + (averages.mid - 0.5) * 0.26;
+      const a = section.averages;
+      const start = clamp(section.start / this.duration);
+      const end = clamp(section.end / this.duration);
+      const span = Math.max(0.035, end - start);
+      const horizonTarget = clamp(horizon + (a.high - a.low) * 0.055 + (randAt(this.seed, i, 682) - 0.5) * 0.075, 0.45, 0.68);
+      const groundTarget = clamp(ground + (a.low - 0.5) * 0.035 + (randAt(this.seed, i, 683) - 0.5) * 0.035, 0.70, 0.86);
+
+      let motif;
+      const roll = randAt(this.seed, i, 684);
+      if (a.low > a.high + 0.17) motif = 0;
+      else if (a.high > a.low + 0.18) motif = 2;
+      else if (a.mid > 0.58 && roll > 0.42) motif = 1;
+      else motif = roll < 0.30 ? 0 : roll < 0.58 ? 1 : roll < 0.80 ? 2 : 3;
+      const previousMotif = this.painterLayouts[i - 1]?.motif;
+      if (previousMotif === motif) motif = (motif + 1 + Math.floor(randAt(this.seed, i, 688) * 2)) % 4;
+
+      const focusProgress = clamp(start + span * (0.30 + randAt(this.seed, i, 685) * 0.42), start + span * 0.18, end - span * 0.10);
       this.painterLayouts.push({
-        startY: y,
-        endY,
-        centerY,
-        secondaryY,
-        groundY: clamp(0.72 + (randAt(this.seed, i, 691) - 0.5) * 0.13 - averages.low * 0.035, 0.62, 0.84),
-        skyY: clamp(0.24 + (randAt(this.seed, i, 692) - 0.5) * 0.15 - averages.high * 0.025, 0.12, 0.38),
+        start,
+        end,
+        horizonStart: horizon,
+        horizonEnd: horizonTarget,
+        groundStart: ground,
+        groundEnd: groundTarget,
+        focusProgress,
         motif,
-        angleBase,
-        phase: randAt(this.seed, i, 689) * TAU,
-        scale: 0.84 + averages.energy * 0.38 + randAt(this.seed, i, 690) * 0.16,
+        phase: randAt(this.seed, i, 686) * TAU,
+        ridgeScale: 0.78 + a.energy * 0.48 + randAt(this.seed, i, 687) * 0.20,
+        subjectScale: 0.78 + a.mid * 0.40 + a.energy * 0.22,
+        openness: clamp(0.35 + a.high * 0.48 - a.low * 0.16, 0.22, 0.84),
+        landmarkDrawn: false,
       });
-      y = endY;
+      horizon = horizonTarget;
+      ground = groundTarget;
     }
+  }
+
+  paintColor(feature, progress, sectionIndex, alpha = 1, lightShift = 0, saturationScale = 0.82) {
+    const { hue, saturation, lightness } = paletteHsl(this.palette, feature, progress, sectionIndex, this.seed, lightShift);
+    const sat = clamp(saturation * saturationScale, 0.18, 0.78);
+    const lit = this.palette.dark ? clamp(lightness * 0.88 + 0.035, 0.18, 0.74) : clamp(lightness * 0.78 + 0.06, 0.16, 0.70);
+    return `hsla(${Math.round(hue * 360)}, ${Math.round(sat * 100)}%, ${Math.round(lit * 100)}%, ${alpha})`;
   }
 
   sectionWash(sectionIndex, x, feature) {
@@ -888,6 +987,377 @@ class CanvasPainting {
     this.prev = { x, y, band, tilt };
   }
 
+  painterlyMetrics(feature, progress) {
+    const h = this.height;
+    const layout = this.painterLayouts[feature.sectionIndex] || {
+      start: 0, end: 1, horizonStart: 0.56, horizonEnd: 0.58,
+      groundStart: 0.78, groundEnd: 0.79, focusProgress: 0.5,
+      motif: 0, phase: 0, ridgeScale: 1, subjectScale: 1, openness: 0.5,
+      landmarkDrawn: false,
+    };
+    const local = feature.sectionPhase;
+    const horizon = lerp(layout.horizonStart, layout.horizonEnd, smoothstep(0, 1, local));
+    const ground = lerp(layout.groundStart, layout.groundEnd, smoothstep(0, 1, local));
+    const pitch = feature.dominant > 1
+      ? clamp((Math.log2(Math.max(55, feature.dominant)) - Math.log2(55)) / 6)
+      : feature.centroid;
+
+    // Large-scale noise changes slowly. Musical detail is expressed by brush texture,
+    // not by making the skyline jump on every analysis frame.
+    const farNoise = valueNoise1D(progress * (2.2 + this.complexity * 0.55), this.seed, 900 + feature.sectionIndex) - 0.5;
+    const midNoise = valueNoise1D(progress * (3.8 + this.complexity * 0.80), this.seed, 930 + feature.sectionIndex) - 0.5;
+    const groundNoise = valueNoise1D(progress * (5.2 + this.complexity * 0.95), this.seed, 960 + feature.sectionIndex) - 0.5;
+    const farY = h * clamp(horizon - 0.125 - feature.energy * 0.030 - farNoise * 0.090 * layout.ridgeScale, 0.20, 0.62);
+    const midY = h * clamp(horizon - 0.015 - feature.low * 0.048 - midNoise * 0.065 * layout.ridgeScale, 0.34, 0.72);
+    const groundY = h * clamp(ground - feature.low * 0.020 - groundNoise * 0.020, 0.64, 0.88);
+    const subjectY = h * clamp(horizon - (pitch - 0.5) * 0.20 + midNoise * 0.025, 0.18, 0.74);
+    const waterY = h * clamp(horizon + 0.060 + groundNoise * 0.016, 0.48, 0.74);
+
+    const section = this.analysis?.sections?.[feature.sectionIndex];
+    const averages = section?.averages || feature;
+    const paintFeature = {
+      energy: lerp(averages.energy ?? feature.energy, feature.energy, 0.08),
+      low: lerp(averages.low ?? feature.low, feature.low, 0.07),
+      mid: lerp(averages.mid ?? feature.mid, feature.mid, 0.07),
+      high: lerp(averages.high ?? feature.high, feature.high, 0.06),
+      centroid: lerp(averages.centroid ?? feature.centroid, feature.centroid, 0.07),
+    };
+    return { layout, horizon, pitch, farY, midY, groundY, subjectY, waterY, paintFeature };
+  }
+
+  redrawPainterTerrain() {
+    const ctx = this.terrainCtx;
+    const h = this.height;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.terrainCanvas.width, this.terrainCanvas.height);
+    ctx.restore();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const groups = [];
+    let group = [];
+    for (const point of this.painterTerrainPoints) {
+      if (group.length && group[group.length - 1].sectionIndex !== point.sectionIndex) {
+        const bridge = group[group.length - 1];
+        groups.push(group);
+        group = [bridge];
+      }
+      group.push(point);
+    }
+    if (group.length) groups.push(group);
+
+    const traceSmooth = (points, yOf) => {
+      const first = points[0];
+      ctx.moveTo(first.x, yOf(first));
+      if (points.length === 2) {
+        ctx.lineTo(points[1].x, yOf(points[1]));
+        return;
+      }
+      for (let i = 1; i < points.length - 1; i++) {
+        const p = points[i];
+        const next = points[i + 1];
+        ctx.quadraticCurveTo(p.x, yOf(p), (p.x + next.x) * 0.5, (yOf(p) + yOf(next)) * 0.5);
+      }
+      const last = points[points.length - 1];
+      ctx.lineTo(last.x, yOf(last));
+    };
+
+    const fillRibbon = (points, topOf, bottomOf, alpha, lightShift, saturationScale) => {
+      if (points.length < 2) return;
+      const sample = points[Math.floor(points.length * 0.55)];
+      ctx.beginPath();
+      traceSmooth(points, topOf);
+      const reversed = Array.from(points).reverse();
+      traceSmooth(reversed, bottomOf);
+      ctx.closePath();
+      ctx.fillStyle = this.paintColor(
+        sample.paintFeature,
+        (sample.layout.start + sample.layout.end) * 0.5,
+        sample.sectionIndex,
+        alpha,
+        lightShift,
+        saturationScale,
+      );
+      ctx.fill();
+    };
+
+    const strokeContour = (points, yOf, alpha, lightShift, width, saturationScale) => {
+      if (points.length < 2) return;
+      const sample = points[Math.floor(points.length * 0.55)];
+      ctx.beginPath();
+      traceSmooth(points, yOf);
+      ctx.lineWidth = width;
+      ctx.strokeStyle = this.paintColor(
+        sample.paintFeature,
+        (sample.layout.start + sample.layout.end) * 0.5,
+        sample.sectionIndex,
+        alpha,
+        lightShift,
+        saturationScale,
+      );
+      ctx.stroke();
+    };
+
+    for (const points of groups) {
+      if (points.length < 2) continue;
+      fillRibbon(points, (p) => p.farY, (p) => p.midY + h * 0.032, this.palette.dark ? 0.17 : 0.115, -0.13, 0.42);
+      fillRibbon(points, (p) => p.midY, (p) => p.groundY + h * 0.020, this.palette.dark ? 0.27 : 0.18, -0.075, 0.52);
+      fillRibbon(points, (p) => p.groundY, () => h * 1.03, this.palette.dark ? 0.46 : 0.34, -0.16, 0.48);
+      strokeContour(points, (p) => p.farY, this.palette.dark ? 0.24 : 0.18, 0.08, 0.7, 0.38);
+      strokeContour(points, (p) => p.midY, this.palette.dark ? 0.31 : 0.23, 0.04, 1.0, 0.40);
+      strokeContour(points, (p) => p.groundY, this.palette.dark ? 0.23 : 0.17, 0.02, 1.3, 0.38);
+
+      const sample = points[Math.floor(points.length * 0.5)];
+      if (sample.layout.motif === 2) {
+        const strands = 4 + Math.round(this.complexity * 2);
+        for (let i = 0; i < strands; i++) {
+          ctx.beginPath();
+          traceSmooth(points, (p) => p.waterY + 5 + i * (5 + sample.paintFeature.low * 2));
+          ctx.lineWidth = 0.45 + (1 - i / strands) * 0.85;
+          ctx.strokeStyle = this.paintColor(sample.paintFeature, (sample.layout.start + sample.layout.end) * 0.5, sample.sectionIndex, this.palette.dark ? 0.17 : 0.12, 0.14, 0.30);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  drawMountainLandmark(x, metrics, feature, progress, stepIndex) {
+    const ctx = this.ctx;
+    const h = this.height;
+    const layout = metrics.layout;
+    const sectionWidth = Math.max(90, (layout.end - layout.start) * this.width);
+    const width = clamp(sectionWidth * (0.46 + feature.energy * 0.12), 96, 250);
+    const baseY = metrics.midY + h * 0.075;
+    const peakLift = h * (0.12 + feature.energy * 0.13) * layout.ridgeScale;
+
+    const drawMass = (layer, offsetX, offsetY, scale, alpha) => {
+      const left = x - width * 0.52 * scale + offsetX;
+      const right = x + width * 0.52 * scale + offsetX;
+      const peak1X = x - width * (0.12 + randAt(this.seed, stepIndex + layer, 981) * 0.10) * scale + offsetX;
+      const peak2X = x + width * (0.18 + randAt(this.seed, stepIndex + layer, 982) * 0.12) * scale + offsetX;
+      const peak1Y = clamp(baseY - peakLift * (0.88 + randAt(this.seed, stepIndex + layer, 983) * 0.28) * scale + offsetY, h * 0.10, baseY - 38);
+      const peak2Y = clamp(baseY - peakLift * (0.46 + randAt(this.seed, stepIndex + layer, 984) * 0.30) * scale + offsetY, h * 0.18, baseY - 22);
+      const valleyY = lerp(peak1Y, baseY, 0.56 + randAt(this.seed, stepIndex + layer, 985) * 0.12);
+
+      ctx.beginPath();
+      ctx.moveTo(left, baseY + offsetY);
+      ctx.bezierCurveTo(
+        lerp(left, peak1X, 0.34), baseY - peakLift * 0.18 + offsetY,
+        lerp(left, peak1X, 0.76), peak1Y + peakLift * 0.16,
+        peak1X, peak1Y,
+      );
+      ctx.bezierCurveTo(
+        lerp(peak1X, peak2X, 0.30), peak1Y + peakLift * 0.30,
+        lerp(peak1X, peak2X, 0.62), valleyY,
+        lerp(peak1X, peak2X, 0.68), valleyY,
+      );
+      ctx.bezierCurveTo(
+        lerp(peak1X, peak2X, 0.80), valleyY - peakLift * 0.12,
+        peak2X - width * 0.06, peak2Y + peakLift * 0.12,
+        peak2X, peak2Y,
+      );
+      ctx.bezierCurveTo(
+        lerp(peak2X, right, 0.38), peak2Y + peakLift * 0.25,
+        lerp(peak2X, right, 0.74), baseY - peakLift * 0.10 + offsetY,
+        right, baseY + offsetY,
+      );
+      ctx.closePath();
+      const g = ctx.createLinearGradient(left, peak1Y, right, baseY);
+      g.addColorStop(0, this.paintColor(metrics.paintFeature, progress, feature.sectionIndex, alpha * 0.72, 0.04 - layer * 0.04, 0.58));
+      g.addColorStop(0.52, this.paintColor(metrics.paintFeature, progress, feature.sectionIndex, alpha, -0.02 - layer * 0.035, 0.62));
+      g.addColorStop(1, this.paintColor(metrics.paintFeature, progress, feature.sectionIndex, alpha * 0.64, -0.12, 0.48));
+      ctx.fillStyle = g;
+      ctx.fill();
+      return { left, right, peak1X, peak1Y, peak2X, peak2Y, baseY: baseY + offsetY };
+    };
+
+    drawMass(2, width * 0.10, 8, 0.82, this.palette.dark ? 0.24 : 0.17);
+    const mass = drawMass(0, 0, 0, 1, this.palette.dark ? 0.47 : 0.34);
+    drawMass(1, -width * 0.12, 12, 0.62, this.palette.dark ? 0.18 : 0.13);
+
+    const contourCount = 4 + Math.round(this.complexity * 2);
+    for (let i = 0; i < contourCount; i++) {
+      const t = (i + 1) / (contourCount + 1);
+      const y = lerp(Math.min(mass.peak1Y, mass.peak2Y), mass.baseY, t);
+      const half = width * 0.44 * Math.sin(t * Math.PI * 0.82);
+      ctx.beginPath();
+      ctx.moveTo(x - half, y + (randAt(this.seed, stepIndex + i, 986) - 0.5) * 5);
+      ctx.bezierCurveTo(
+        x - half * 0.36, y - 4 - feature.mid * 6,
+        x + half * 0.28, y + 4,
+        x + half * 0.92, y + (randAt(this.seed, stepIndex + i, 987) - 0.5) * 5,
+      );
+      ctx.lineWidth = 0.55 + (1 - t) * 1.8;
+      ctx.strokeStyle = this.paintColor(metrics.paintFeature, progress, feature.sectionIndex, this.palette.dark ? 0.26 : 0.20, 0.13 - t * 0.08, 0.40);
+      ctx.stroke();
+    }
+  }
+
+  drawLandscapeTree(x, groundY, scale, feature, progress, stepIndex, alpha = 0.78) {
+    const ctx = this.ctx;
+    const height = (24 + feature.mid * 42 + feature.onset * 22) * scale;
+    const sway = (randAt(this.seed, stepIndex, 990) - 0.5) * height * 0.24;
+    const topX = x + sway;
+    const topY = groundY - height;
+    const trunkWidth = 1.4 + feature.low * 3.2 + feature.energy * 1.8;
+    this.drawBristleStroke({
+      x1: x, y1: groundY, x2: topX, y2: topY,
+      width: trunkWidth, curve: sway * 0.24,
+      feature, progress, sectionIndex: feature.sectionIndex,
+      alpha, stepIndex, channel: 991,
+    });
+
+    const branchCount = 3 + Math.floor(feature.high * 3 + this.complexity);
+    for (let i = 0; i < branchCount; i++) {
+      const t = 0.24 + i / Math.max(1, branchCount - 1) * 0.58;
+      const bx = lerp(x, topX, t);
+      const by = lerp(groundY, topY, t);
+      const side = (i + stepIndex) % 2 ? -1 : 1;
+      const length = height * (0.12 + randAt(this.seed, stepIndex * 11 + i, 992) * 0.18) * (0.75 + feature.high * 0.35);
+      const ex = bx + side * length;
+      const ey = by - length * (0.18 + randAt(this.seed, stepIndex * 13 + i, 993) * 0.48);
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(lerp(bx, ex, 0.52), lerp(by, ey, 0.52) - side * 3, ex, ey);
+      ctx.lineWidth = Math.max(0.55, trunkWidth * (0.24 + (1 - t) * 0.16));
+      ctx.strokeStyle = this.paintColor(feature, progress, feature.sectionIndex, alpha * 0.72, 0.10, 0.66);
+      ctx.stroke();
+    }
+
+    if (feature.high > 0.28) {
+      const crownCount = 3 + Math.floor(feature.high * 4);
+      for (let i = 0; i < crownCount; i++) {
+        const cx = topX + (randAt(this.seed, stepIndex * 17 + i, 994) - 0.5) * height * 0.38;
+        const cy = topY + (randAt(this.seed, stepIndex * 19 + i, 995) - 0.5) * height * 0.18;
+        const rx = 4 + feature.high * 10 + randAt(this.seed, stepIndex * 23 + i, 996) * 8;
+        const ry = 2 + feature.high * 6 + randAt(this.seed, stepIndex * 29 + i, 997) * 5;
+        this.organicBlobPath(cx, cy, rx, ry, stepIndex * 31 + i, 998, 8);
+        ctx.fillStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.30 : 0.22, 0.12, 0.66);
+        ctx.fill();
+      }
+    }
+  }
+
+  drawPavilionLandmark(x, metrics, feature, progress) {
+    const ctx = this.ctx;
+    const groundY = metrics.groundY;
+    const scale = metrics.layout.subjectScale;
+    const width = 54 * scale;
+    const height = (48 + feature.mid * 32) * scale;
+    const left = x - width * 0.5;
+    const right = x + width * 0.5;
+    const roofY = groundY - height;
+    const color = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.68 : 0.56, 0.06, 0.64);
+    const fine = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.46 : 0.36, 0.18, 0.50);
+
+    ctx.lineCap = 'square';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.4 + feature.low * 2.0;
+    ctx.beginPath();
+    ctx.moveTo(left + width * 0.18, groundY);
+    ctx.lineTo(left + width * 0.18, roofY + height * 0.20);
+    ctx.moveTo(right - width * 0.18, groundY);
+    ctx.lineTo(right - width * 0.18, roofY + height * 0.20);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(left - width * 0.14, roofY + height * 0.18);
+    ctx.quadraticCurveTo(x, roofY - height * 0.12, right + width * 0.14, roofY + height * 0.18);
+    ctx.quadraticCurveTo(x, roofY + height * 0.06, left - width * 0.14, roofY + height * 0.18);
+    ctx.fillStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.42 : 0.32, -0.01, 0.70);
+    ctx.fill();
+
+    ctx.strokeStyle = fine;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left + width * 0.08, groundY - height * 0.36);
+    ctx.lineTo(right - width * 0.08, groundY - height * 0.36);
+    ctx.moveTo(x, roofY + height * 0.16);
+    ctx.lineTo(x, groundY);
+    ctx.stroke();
+
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(left + width * (0.18 - i * 0.05), groundY + i * 4);
+      ctx.lineTo(right - width * (0.18 - i * 0.05), groundY + i * 4);
+      ctx.lineWidth = 1.2 + i * 0.8;
+      ctx.strokeStyle = this.paintColor(feature, progress, feature.sectionIndex, 0.25, -0.14, 0.50);
+      ctx.stroke();
+    }
+  }
+
+  drawWaterLandmark(x, metrics, feature, progress, stepIndex) {
+    const ctx = this.ctx;
+    const radius = 12 + feature.high * 18 + feature.energy * 9;
+    const y = clamp(metrics.farY - radius * 0.65, this.height * 0.12, metrics.waterY - radius * 1.7);
+    const disc = ctx.createRadialGradient(x - radius * 0.25, y - radius * 0.25, radius * 0.08, x, y, radius);
+    disc.addColorStop(0, this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.92 : 0.72, 0.28, 0.32));
+    disc.addColorStop(0.72, this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.58 : 0.44, 0.18, 0.42));
+    disc.addColorStop(1, this.paintColor(feature, progress, feature.sectionIndex, 0, 0.08, 0.42));
+    ctx.fillStyle = disc;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, TAU);
+    ctx.fill();
+
+    const reflectionCount = 6 + Math.round(this.complexity * 3);
+    for (let i = 0; i < reflectionCount; i++) {
+      const ry = metrics.waterY + 4 + i * (4 + feature.low * 2);
+      const half = radius * (0.22 + (1 - i / reflectionCount) * 0.76) * (0.7 + randAt(this.seed, stepIndex + i, 1001) * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x - half, ry);
+      ctx.quadraticCurveTo(x, ry + (randAt(this.seed, stepIndex + i, 1002) - 0.5) * 3, x + half, ry);
+      ctx.lineWidth = 0.7 + (1 - i / reflectionCount) * 2.2;
+      ctx.strokeStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.42 : 0.30, 0.22, 0.34);
+      ctx.stroke();
+    }
+  }
+
+  drawGroveLandmark(x, metrics, feature, progress, stepIndex) {
+    const count = 4 + Math.floor(feature.mid * 4 + this.complexity * 2);
+    const spread = 42 + feature.energy * 42;
+    for (let i = 0; i < count; i++) {
+      const offset = (i / Math.max(1, count - 1) - 0.5) * spread + (randAt(this.seed, stepIndex + i, 1010) - 0.5) * 12;
+      const scale = (0.58 + randAt(this.seed, stepIndex + i, 1011) * 0.64) * metrics.layout.subjectScale;
+      this.drawLandscapeTree(x + offset, metrics.groundY + randAt(this.seed, stepIndex + i, 1012) * 5, scale, feature, progress, stepIndex * 17 + i, 0.72);
+    }
+  }
+
+  drawSceneLandmark(x, metrics, feature, progress, stepIndex) {
+    if (metrics.layout.motif === 0) this.drawMountainLandmark(x, metrics, feature, progress, stepIndex);
+    else if (metrics.layout.motif === 1) this.drawGroveLandmark(x, metrics, feature, progress, stepIndex);
+    else if (metrics.layout.motif === 2) this.drawWaterLandmark(x, metrics, feature, progress, stepIndex);
+    else this.drawPavilionLandmark(x, metrics, feature, progress, stepIndex);
+  }
+
+  drawCloudStroke(x, y, length, feature, progress, stepIndex) {
+    const ctx = this.ctx;
+    const layers = 2 + Math.floor(feature.high * 2);
+    for (let i = 0; i < layers; i++) {
+      const yy = y + (i - (layers - 1) * 0.5) * (3 + feature.high * 4);
+      const left = x - length * (0.55 + randAt(this.seed, stepIndex + i, 1020) * 0.18);
+      const right = x + length * (0.45 + randAt(this.seed, stepIndex + i, 1021) * 0.18);
+      ctx.beginPath();
+      ctx.moveTo(left, yy);
+      ctx.bezierCurveTo(lerp(left, right, 0.30), yy - 5 - feature.high * 7, lerp(left, right, 0.68), yy + 4, right, yy - 1);
+      ctx.lineWidth = 1.2 + feature.high * 3.3 + i * 0.5;
+      ctx.strokeStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.15 : 0.105, 0.20, 0.36);
+      ctx.stroke();
+    }
+  }
+
+  drawBirdMark(x, y, scale, feature, progress) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(x - scale, y);
+    ctx.quadraticCurveTo(x - scale * 0.45, y - scale * 0.45, x, y);
+    ctx.quadraticCurveTo(x + scale * 0.45, y - scale * 0.45, x + scale, y);
+    ctx.lineWidth = Math.max(0.55, scale * 0.13);
+    ctx.strokeStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.64 : 0.48, 0.12, 0.36);
+    ctx.stroke();
+  }
+
   generatePainterly(time, feature, stepIndex) {
     const ctx = this.ctx;
     const w = this.width;
@@ -896,188 +1366,176 @@ class CanvasPainting {
     const marginX = Math.max(26, w * 0.04);
     const progress = clamp(time / this.duration);
     const x = marginX + progress * (w - marginX * 2);
-    const position = this.painterlyPosition(feature, progress, stepIndex);
-    const y = position.y;
-    const layout = position.layout;
-    const composite = this.palette.dark ? 'screen' : 'multiply';
+    const metrics = this.painterlyMetrics(feature, progress);
+
+    // Keep the landscape calm across analysis frames, including at section changes.
+    if (this.painterPrev) {
+      const sameSection = this.painterPrev.sectionIndex === feature.sectionIndex;
+      const rate = sameSection ? 0.13 : 0.055;
+      metrics.farY = lerp(this.painterPrev.farY, metrics.farY, rate);
+      metrics.midY = lerp(this.painterPrev.midY, metrics.midY, rate * 1.20);
+      metrics.groundY = lerp(this.painterPrev.groundY, metrics.groundY, rate * 0.90);
+      metrics.waterY = lerp(this.painterPrev.waterY, metrics.waterY, rate);
+    }
+    const current = { x, progress, ...metrics, sectionIndex: feature.sectionIndex };
+    this.painterTerrainPoints.push(current);
+    this.redrawPainterTerrain();
+    this.ctx = this.detailCtx;
 
     ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.globalCompositeOperation = composite;
 
-    if (feature.sectionIndex !== this.lastSection) {
-      const openingWidth = Math.max(24, w * (0.035 + feature.energy * 0.025));
-      const openingHeight = h * (0.14 + layout.scale * 0.12);
-      this.drawOrganicBlob(
-        x - openingWidth * 0.36,
-        lerp(y, position.secondaryY, 0.34),
-        openingWidth,
-        openingHeight,
-        feature,
-        progress,
-        feature.sectionIndex,
-        this.palette.dark ? 0.10 : 0.075,
-        stepIndex,
-        720,
-      );
-      this.lastSection = feature.sectionIndex;
-      this.painterPrev = null;
-      this.painterGroundPrev = null;
+    // One compositional landmark per musical section gives the finished work a readable rhythm.
+    if (!metrics.layout.landmarkDrawn && progress >= metrics.layout.focusProgress) {
+      this.drawSceneLandmark(x, metrics, feature, progress, stepIndex);
+      metrics.layout.landmarkDrawn = true;
+      this.painterLastSubjectX = x;
+      this.painterLastAccentX = x;
     }
 
-    // Bass continuously accumulates as a lower pigment mass, making the result read as a painted field.
-    const groundNoise = (valueNoise1D(progress * (5.5 + this.complexity * 2), this.seed, 790 + feature.sectionIndex) - 0.5) * h * 0.055;
-    const groundY = clamp(layout.groundY * h - feature.low * h * 0.075 + groundNoise, h * 0.53, h * 0.88);
-    if (this.painterGroundPrev && this.painterGroundPrev.sectionIndex === feature.sectionIndex) {
-      this.drawPigmentMassSegment(this.painterGroundPrev, x, groundY, feature, progress, feature.sectionIndex, stepIndex);
-    }
-    this.painterGroundPrev = { x, y: groundY, sectionIndex: feature.sectionIndex };
-
-    // Treble occasionally opens a separate sky field, creating figure/ground rather than one plotted path.
-    const skyStride = Math.max(11, Math.round(24 - this.complexity * 7));
-    if (feature.high > 0.28 && stepIndex % skyStride === 0) {
-      const skyY = layout.skyY * h + (randAt(this.seed, stepIndex, 791) - 0.5) * h * 0.12;
-      this.drawOrganicBlob(
-        Math.max(marginX, x - (24 + feature.high * 38) * 0.44),
-        skyY,
-        24 + feature.high * 38,
-        18 + feature.high * 40,
-        feature,
-        progress,
-        feature.sectionIndex,
-        this.palette.dark ? 0.075 : 0.052,
-        stepIndex,
-        792,
-      );
+    const sectionPixelWidth = Math.max(90, (metrics.layout.end - metrics.layout.start) * (w - marginX * 2));
+    const cloudGap = clamp(sectionPixelWidth * 0.24, 72, 142) / (0.90 + this.complexity * 0.16);
+    if (feature.high > 0.36 && x - this.painterLastCloudX > cloudGap) {
+      const skyY = clamp(metrics.farY * (0.38 + randAt(this.seed, stepIndex, 1030) * 0.32), h * 0.10, h * 0.39);
+      this.drawCloudStroke(x - 8, skyY, 20 + feature.high * 38, feature, progress, stepIndex);
+      this.painterLastCloudX = x;
     }
 
-    // Slow colour fields are the underpainting. They build atmosphere without becoming a waveform.
-    const washStride = Math.max(8, Math.round(19 - this.complexity * 6));
-    if (stepIndex % washStride === 0) {
-      const rx = 26 + feature.energy * 54 + feature.low * 28;
-      const ry = 30 + feature.mid * 58 + feature.high * 24;
-      const washY = lerp(y, position.secondaryY, randAt(this.seed, stepIndex, 721) * (0.34 + feature.high * 0.38));
-      this.drawOrganicBlob(
-        Math.max(marginX, x - rx * 0.44),
-        washY,
-        rx,
-        ry,
-        feature,
-        progress,
-        feature.sectionIndex,
-        this.palette.dark ? 0.105 : 0.072,
-        stepIndex,
-        722,
-      );
+    // Secondary subjects are deliberately scarce; silence and open sky are part of the painting.
+    const subjectGap = clamp(sectionPixelWidth * 0.20, 62, 118) / (0.90 + this.complexity * 0.14);
+    if (feature.mid > 0.42 && x - this.painterLastSubjectX > subjectGap) {
+      const choice = randAt(this.seed, stepIndex, 1040);
+      if (metrics.layout.motif === 1 || choice < 0.28) {
+        const scale = (0.30 + feature.mid * 0.40) * metrics.layout.subjectScale;
+        this.drawLandscapeTree(x, metrics.groundY + 2, scale, feature, progress, stepIndex, this.palette.dark ? 0.54 : 0.42);
+      } else if (metrics.layout.motif === 2) {
+        const count = 2 + Math.floor(feature.mid * 2);
+        for (let i = 0; i < count; i++) {
+          const yy = metrics.waterY + 5 + i * (5 + feature.low * 2);
+          ctx.beginPath();
+          ctx.moveTo(x - 13 - i * 2, yy);
+          ctx.quadraticCurveTo(x, yy + (randAt(this.seed, stepIndex + i, 1041) - 0.5) * 3, x + 15 + i * 2, yy);
+          ctx.lineWidth = 0.6 + feature.mid * 1.2;
+          ctx.strokeStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.26 : 0.19, 0.14, 0.38);
+          ctx.stroke();
+        }
+      } else {
+        const rockW = 9 + feature.low * 14;
+        const rockH = 5 + feature.mid * 11;
+        this.organicBlobPath(x, metrics.groundY - rockH * 0.42, rockW, rockH, stepIndex, 1042, 9);
+        ctx.fillStyle = this.paintColor(metrics.paintFeature, progress, feature.sectionIndex, this.palette.dark ? 0.30 : 0.22, -0.04, 0.50);
+        ctx.fill();
+      }
+      this.painterLastSubjectX = x;
     }
 
-    // Bass and overall energy lay down broad, dry-brush masses.
-    const massStride = Math.max(2, Math.round(5.2 - this.complexity * 2.1));
-    if (stepIndex % massStride === 0 && (feature.low > 0.20 || feature.energy > 0.30)) {
-      const length = (18 + feature.low * 58 + feature.energy * 22) * layout.scale;
-      const width = (5.0 + feature.low * 20 + feature.energy * 9) * (0.78 + this.complexity * 0.24);
-      const angle = clamp((randAt(this.seed, stepIndex, 730) - 0.5) * 0.46 + (feature.mid - 0.5) * 0.16, -0.48, 0.48);
-      this.drawBristleStroke({
-        x1: Math.max(marginX, x - Math.cos(angle) * length),
-        y1: groundY - Math.sin(angle) * length,
-        x2: x,
-        y2: groundY,
-        width,
-        curve: (randAt(this.seed, stepIndex, 731) - 0.5) * width * 1.8,
-        feature,
-        progress,
-        sectionIndex: feature.sectionIndex,
-        alpha: this.palette.dark ? 0.58 : 0.46,
-        stepIndex,
-        channel: 732,
-      });
-    }
-
-    // Midrange and pitch become discrete painterly gestures, not a single connected centre line.
-    const gestureStride = Math.max(1, Math.round(3.4 - this.complexity * 1.55));
-    if (stepIndex % gestureStride === 0) {
-      const length = 9 + feature.mid * 28 + feature.onset * 18 + feature.centroid * 7;
-      const width = 2.2 + feature.energy * 7.0 + feature.mid * 4.6;
-      const angle = clamp(position.angle + (feature.centroid - 0.5) * 0.42 + (randAt(this.seed, stepIndex, 740) - 0.5) * 0.34, -1.22, 1.22);
-      this.drawBristleStroke({
-        x1: Math.max(marginX, x - Math.cos(angle) * length),
-        y1: y - Math.sin(angle) * length,
-        x2: x,
-        y2: y,
-        width,
-        curve: (feature.mid - 0.5) * width * 1.8 + (randAt(this.seed, stepIndex, 741) - 0.5) * width,
-        feature,
-        progress,
-        sectionIndex: feature.sectionIndex,
-        alpha: this.palette.dark ? 0.78 : 0.62,
-        stepIndex,
-        channel: 742,
-      });
-
-      // Harmonic echoes occupy a second compositional area and keep the canvas from collapsing into one path.
-      const echoChance = (0.08 + feature.mid * 0.18 + feature.high * 0.08) * this.complexity;
-      if (randAt(this.seed, stepIndex, 748) < echoChance) {
-        const echoY = lerp(position.secondaryY, y, 0.18 + randAt(this.seed, stepIndex, 749) * 0.28);
-        const echoLength = length * (0.46 + randAt(this.seed, stepIndex, 750) * 0.30);
-        const echoAngle = clamp(-angle * 0.62 + (randAt(this.seed, stepIndex, 751) - 0.5) * 0.34, -1.18, 1.18);
+    // Strong attacks become a small vocabulary of intentional marks. Varying the
+    // gesture avoids the evenly spaced arches of a conventional visualiser.
+    const accent = feature.onset * 0.92 + feature.energy * 0.08;
+    const accentGap = clamp(sectionPixelWidth * 0.21, 68, 124) / (0.92 + this.complexity * 0.12);
+    if (accent > 0.50 && x - this.painterLastAccentX > accentGap && randAt(this.seed, stepIndex, 1050) < accent * 0.72) {
+      const choice = randAt(this.seed, stepIndex, 1051);
+      const direction = randAt(this.seed, stepIndex, 1052) < 0.5 ? -1 : 1;
+      const baseY = metrics.groundY - 3;
+      if (choice < 0.30) {
+        const length = 30 + feature.onset * 52 + feature.mid * 18;
         this.drawBristleStroke({
-          x1: Math.max(marginX, x - Math.cos(echoAngle) * echoLength),
-          y1: echoY - Math.sin(echoAngle) * echoLength,
-          x2: x,
-          y2: echoY,
-          width: Math.max(0.9, width * 0.48),
-          curve: (randAt(this.seed, stepIndex, 752) - 0.5) * width,
+          x1: x - direction * length * 0.18,
+          y1: baseY,
+          x2: x + direction * length * 0.52,
+          y2: clamp(metrics.subjectY - 8 - feature.onset * 14, h * 0.20, baseY - 20),
+          width: 2.3 + feature.low * 4.6,
+          curve: direction * (6 + feature.mid * 13),
           feature,
           progress,
           sectionIndex: feature.sectionIndex,
-          alpha: this.palette.dark ? 0.40 : 0.30,
+          alpha: this.palette.dark ? 0.62 : 0.48,
           stepIndex,
-          channel: 753,
+          channel: 1053,
         });
-      }
-    }
-
-    // Strong transients read as decisive palette-knife/calligraphic marks.
-    const accentSignal = feature.onset * (0.82 + this.complexity * 0.20) + feature.energy * 0.09;
-    if (accentSignal > 0.31 && randAt(this.seed, stepIndex, 760) < accentSignal) {
-      const direction = randAt(this.seed, stepIndex, 761) < 0.5 ? -1 : 1;
-      const angle = clamp(position.angle + direction * (0.32 + randAt(this.seed, stepIndex, 762) * 0.72), -1.30, 1.30);
-      this.drawKnifeMark(
-        x,
-        y,
-        angle,
-        12 + feature.onset * 46 + feature.high * 16,
-        2.4 + feature.energy * 8.8,
-        feature,
-        progress,
-        feature.sectionIndex,
-        stepIndex,
-        763,
-      );
-    }
-
-    // High frequencies add restrained spatter and dry-brush flecks around existing masses.
-    if (feature.high > 0.48 && randAt(this.seed, stepIndex, 770) < feature.high * 0.34 * this.complexity) {
-      const count = 1 + Math.floor(feature.high * (2.2 + this.complexity));
-      for (let i = 0; i < count; i++) {
-        const spreadX = 8 + feature.high * 28;
-        const spreadY = 18 + feature.high * 64;
-        const px = x - randAt(this.seed, stepIndex * 11 + i, 771) * spreadX;
-        const fleckAnchor = randAt(this.seed, stepIndex * 19 + i, 774) < 0.58 ? layout.skyY * h : position.secondaryY;
-        const py = fleckAnchor + (randAt(this.seed, stepIndex * 13 + i, 772) - 0.5) * spreadY;
-        const radius = 0.45 + randAt(this.seed, stepIndex * 17 + i, 773) * (1.2 + feature.high * 1.7);
+      } else if (choice < 0.58) {
+        const length = 28 + feature.onset * 58;
+        const y = lerp(metrics.midY, metrics.groundY, 0.54 + randAt(this.seed, stepIndex, 1054) * 0.28);
+        this.drawKnifeMark(
+          x + direction * length * 0.28,
+          y,
+          direction > 0 ? -0.06 - feature.mid * 0.18 : Math.PI + 0.06 + feature.mid * 0.18,
+          length,
+          3 + feature.low * 7,
+          feature,
+          progress,
+          feature.sectionIndex,
+          stepIndex,
+          1055,
+        );
+      } else if (choice < 0.80) {
+        const height = 24 + feature.onset * 42 + feature.mid * 16;
+        this.drawBristleStroke({
+          x1: x,
+          y1: baseY,
+          x2: x + direction * (4 + feature.high * 12),
+          y2: baseY - height,
+          width: 1.4 + feature.low * 3.4,
+          curve: direction * (3 + feature.high * 8),
+          feature,
+          progress,
+          sectionIndex: feature.sectionIndex,
+          alpha: this.palette.dark ? 0.55 : 0.42,
+          stepIndex,
+          channel: 1056,
+        });
+      } else {
+        const radius = 7 + feature.onset * 13;
+        const y = lerp(metrics.midY, metrics.groundY, 0.45 + randAt(this.seed, stepIndex, 1057) * 0.32);
+        this.organicBlobPath(x, y, radius * 1.25, radius * 0.65, stepIndex, 1058, 10);
+        ctx.fillStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.38 : 0.28, 0.10, 0.56);
+        ctx.fill();
         ctx.beginPath();
-        ctx.arc(px, py, radius, 0, TAU);
-        ctx.fillStyle = this.color(feature, progress, feature.sectionIndex, 0.30 + feature.high * 0.30, 0.16);
+        ctx.arc(x, y, 1.2 + feature.onset * 2.4, 0, TAU);
+        ctx.fillStyle = this.paintColor(feature, progress, feature.sectionIndex, this.palette.dark ? 0.72 : 0.52, 0.20, 0.40);
         ctx.fill();
       }
+      this.painterLastAccentX = x;
     }
 
+    const birdGap = 100 / (0.92 + this.complexity * 0.12);
+    if (feature.high > 0.68 && x - this.painterLastBirdX > birdGap && randAt(this.seed, stepIndex, 1060) < feature.high * 0.58) {
+      const birdCount = 1 + Math.floor(feature.high * 1.5);
+      for (let i = 0; i < birdCount; i++) {
+        const bx = x + (randAt(this.seed, stepIndex * 7 + i, 1061) - 0.5) * 22;
+        const by = h * (0.14 + randAt(this.seed, stepIndex * 11 + i, 1062) * 0.20);
+        this.drawBirdMark(bx, by, 2.4 + feature.high * 2.7 + i * 0.4, feature, progress);
+      }
+      this.painterLastBirdX = x;
+    }
+
+    // Low frequencies continue to leave a quiet horizontal ground stroke.
+    if (feature.low > 0.54 && stepIndex % Math.max(8, Math.round(15 - this.complexity * 4)) === 0) {
+      const length = 18 + feature.low * 34;
+      this.drawBristleStroke({
+        x1: x - length,
+        y1: metrics.groundY + (randAt(this.seed, stepIndex, 1070) - 0.5) * 7,
+        x2: x + length * 0.22,
+        y2: metrics.groundY + (randAt(this.seed, stepIndex, 1071) - 0.5) * 5,
+        width: 1.8 + feature.low * 4.8,
+        curve: (randAt(this.seed, stepIndex, 1072) - 0.5) * 5,
+        feature: metrics.paintFeature,
+        progress,
+        sectionIndex: feature.sectionIndex,
+        alpha: this.palette.dark ? 0.34 : 0.25,
+        stepIndex,
+        channel: 1073,
+      });
+    }
 
     ctx.restore();
-    this.painterPrev = { x, y, sectionIndex: feature.sectionIndex };
+    this.composePainterly();
+    this.painterPrev = current;
+    this.lastSection = feature.sectionIndex;
   }
+
 }
 class Sculpture3D {
   constructor(container) {
@@ -1124,6 +1582,7 @@ class Sculpture3D {
 
     this.cameraMode = 'follow';
     this.palette = PALETTES.aurora;
+    this.styleKey = 'sanctuary';
     this.seed = 1;
     this.complexity = 1;
     this.analysis = null;
@@ -1140,6 +1599,18 @@ class Sculpture3D {
     this.branchCount = 0;
     this.nodeCount = 0;
     this.sparkCount = 0;
+    this.floorCount = 0;
+    this.foundationCount = 0;
+    this.columnCount = 0;
+    this.beamCount = 0;
+    this.panelCount = 0;
+    this.ornamentCount = 0;
+    this.sanctuaryLayouts = [];
+    this.sanctuaryHeading = 0;
+    this.sanctuaryFloorAnchor = new THREE.Vector3(0, 0, 0);
+    this.sanctuaryFloorWidth = 4.5;
+    this.lastFloorStep = -999;
+    this.lastBayStep = -999;
     this.sectionMeshes = [];
     this.lastSection = -1;
     this.lastBranchStep = -999;
@@ -1158,14 +1629,18 @@ class Sculpture3D {
     };
   }
 
-  configure({ analysis, duration, seed, palette, complexity, stepDuration }) {
+  configure({ analysis, duration, seed, palette, complexity, stepDuration, sculptureStyleKey = 'growth' }) {
     this.analysis = analysis;
     this.duration = Math.max(0.001, duration);
     this.seed = seed;
     this.palette = palette;
     this.complexity = complexity;
+    this.styleKey = SCULPTURE_STYLES[sculptureStyleKey] ? sculptureStyleKey : 'growth';
     this.maxSteps = Math.ceil(duration / stepDuration) + 16;
-    this.totalLength = clamp(duration * 0.47, 48, 260);
+    this.totalLength = this.styleKey === 'sanctuary'
+      ? clamp(duration * 0.39, 48, 240)
+      : clamp(duration * 0.47, 48, 260);
+    this.buildSanctuaryLayouts();
     this.createInstances();
     this.applyPalette();
   }
@@ -1174,10 +1649,15 @@ class Sculpture3D {
     const p = this.palette;
     this.scene.background = new THREE.Color(p.bg);
     this.scene.fog = null;
+    this.grid.visible = true;
     this.grid.material.color.set(p.dark ? 0x3a4a62 : 0x60706c);
-    this.grid.material.opacity = p.dark ? 0.12 : 0.16;
+    this.grid.material.opacity = this.styleKey === 'sanctuary'
+      ? (p.dark ? 0.055 : 0.075)
+      : (p.dark ? 0.12 : 0.16);
     this.hemi.color.set(p.dark ? 0xc8e7ff : 0xffffff);
     this.hemi.groundColor.set(p.dark ? 0x24152d : 0x78827c);
+    this.keyLight.intensity = this.styleKey === 'sanctuary' ? 2.05 : 1.72;
+    this.rimLight.intensity = this.styleKey === 'sanctuary' ? 1.72 : 1.48;
     this.rimLight.color.set(p.accent);
     this.tipLight.color.set(p.accent);
   }
@@ -1204,6 +1684,7 @@ class Sculpture3D {
 
   createInstances() {
     this.clearRoot();
+
     const trunkGeometry = new THREE.CylinderGeometry(1, 1, 1, 9, 1, false);
     const branchGeometry = new THREE.CylinderGeometry(0.82, 1, 1, 7, 1, false);
     const nodeGeometry = new THREE.OctahedronGeometry(1, 0);
@@ -1217,12 +1698,34 @@ class Sculpture3D {
     this.branches = new THREE.InstancedMesh(branchGeometry, branchMaterial, Math.ceil(this.maxSteps * 1.55));
     this.nodes = new THREE.InstancedMesh(nodeGeometry, nodeMaterial, Math.ceil(this.maxSteps * 0.72));
     this.sparks = new THREE.InstancedMesh(sparkGeometry, sparkMaterial, Math.ceil(this.maxSteps * 1.1));
-    for (const mesh of [this.trunk, this.branches, this.nodes, this.sparks]) {
+
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const columnGeometry = new THREE.CylinderGeometry(0.78, 1, 1, 10, 1, false);
+    const ornamentGeometry = new THREE.OctahedronGeometry(1, 0);
+    const floorMaterial = new THREE.MeshStandardMaterial({ roughness: 0.54, metalness: 0.10 });
+    const foundationMaterial = new THREE.MeshStandardMaterial({ roughness: 0.70, metalness: 0.04 });
+    const columnMaterial = new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.18 });
+    const beamMaterial = new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.17 });
+    const panelMaterial = new THREE.MeshPhysicalMaterial({ roughness: 0.22, metalness: 0.12, transmission: 0.12, transparent: true, opacity: 0.62, side: THREE.DoubleSide });
+    const ornamentMaterial = new THREE.MeshStandardMaterial({ roughness: 0.20, metalness: 0.34, emissiveIntensity: 0.20, flatShading: true });
+
+    this.floors = new THREE.InstancedMesh(boxGeometry, floorMaterial, this.maxSteps);
+    this.foundations = new THREE.InstancedMesh(boxGeometry, foundationMaterial, this.maxSteps);
+    this.columns = new THREE.InstancedMesh(columnGeometry, columnMaterial, Math.ceil(this.maxSteps * 1.15));
+    this.beams = new THREE.InstancedMesh(boxGeometry, beamMaterial, Math.ceil(this.maxSteps * 0.72));
+    this.panels = new THREE.InstancedMesh(boxGeometry, panelMaterial, Math.ceil(this.maxSteps * 1.22));
+    this.ornaments = new THREE.InstancedMesh(ornamentGeometry, ornamentMaterial, Math.ceil(this.maxSteps * 0.72));
+
+    const growthMeshes = [this.trunk, this.branches, this.nodes, this.sparks];
+    const sanctuaryMeshes = [this.floors, this.foundations, this.columns, this.beams, this.panels, this.ornaments];
+    for (const mesh of [...growthMeshes, ...sanctuaryMeshes]) {
       mesh.count = 0;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
       this.root.add(mesh);
     }
+    for (const mesh of growthMeshes) mesh.visible = this.styleKey === 'growth';
+    for (const mesh of sanctuaryMeshes) mesh.visible = this.styleKey === 'sanctuary';
   }
 
   resize() {
@@ -1242,10 +1745,18 @@ class Sculpture3D {
     this.branchCount = 0;
     this.nodeCount = 0;
     this.sparkCount = 0;
-    if (this.trunk) this.trunk.count = 0;
-    if (this.branches) this.branches.count = 0;
-    if (this.nodes) this.nodes.count = 0;
-    if (this.sparks) this.sparks.count = 0;
+    this.floorCount = 0;
+    this.foundationCount = 0;
+    this.columnCount = 0;
+    this.beamCount = 0;
+    this.panelCount = 0;
+    this.ornamentCount = 0;
+    for (const mesh of [
+      this.trunk, this.branches, this.nodes, this.sparks,
+      this.floors, this.foundations, this.columns, this.beams, this.panels, this.ornaments,
+    ]) {
+      if (mesh) mesh.count = 0;
+    }
     for (const mesh of this.sectionMeshes) {
       this.root.remove(mesh);
       this.disposeObject(mesh);
@@ -1254,6 +1765,12 @@ class Sculpture3D {
     this.lastSection = -1;
     this.lastBranchStep = -999;
     this.lastNodeStep = -999;
+    this.lastBayStep = -999;
+    this.lastFloorStep = -999;
+    this.sanctuaryHeading = 0;
+    this.sanctuaryFloorAnchor.set(0, 0, 0);
+    this.sanctuaryFloorWidth = this.sanctuaryLayouts[0]?.width || 4.5;
+    for (const layout of this.sanctuaryLayouts) layout.landmarkDrawn = false;
     this.prevPoint.set(0, 0, 0);
     this.point.set(0, 0, 0);
     this.velocity.set(this.totalLength / Math.max(1, this.maxSteps), 0, 0);
@@ -1322,7 +1839,559 @@ class Sculpture3D {
     this.expandBounds(this.point.clone().sub(extent));
   }
 
+  buildSanctuaryLayouts() {
+    this.sanctuaryLayouts = [];
+    if (!this.analysis?.sections?.length) return;
+    let heading = 0;
+    let floorY = 0;
+    const firstTurn = randAt(this.seed, 0, 1109) < 0.5 ? -1 : 1;
+    for (let i = 0; i < this.analysis.sections.length; i++) {
+      const section = this.analysis.sections[i];
+      const a = section.averages;
+      const direction = (i % 2 === 0 ? firstTurn : -firstTurn);
+      const turn = direction * (0.14 + randAt(this.seed, i, 1110) * (0.24 + a.energy * 0.24));
+      heading = clamp(heading + turn, -1.08, 1.08);
+      floorY = clamp(floorY + (a.low - a.high) * 0.42 + (randAt(this.seed, i, 1111) - 0.5) * 0.62, -2.4, 2.4);
+      let motif = Math.floor(randAt(this.seed, i, 1112) * 4);
+      if (this.sanctuaryLayouts[i - 1]?.motif === motif) motif = (motif + 1 + Math.floor(randAt(this.seed, i, 1114) * 2)) % 4;
+      this.sanctuaryLayouts.push({
+        heading,
+        floorY,
+        width: 4.2 + a.low * 4.2 + a.energy * 1.15,
+        height: 4.4 + a.mid * 4.9 + a.energy * 1.6,
+        bayGap: Math.max(10, Math.round(20 - a.energy * 4.2 - this.complexity * 2.1)),
+        motif,
+        phase: randAt(this.seed, i, 1113) * TAU,
+        centerProgress: clamp((section.start + section.end) * 0.5 / this.duration),
+        colorFeature: {
+          energy: a.energy,
+          low: a.low,
+          mid: a.mid,
+          high: a.high,
+          centroid: a.centroid,
+          onset: 0.35,
+          dominant: 0,
+          sectionIndex: i,
+          sectionPhase: 0.5,
+        },
+        landmarkDrawn: false,
+      });
+    }
+  }
+
+  sanctuaryFeature(layout, feature, liveMix = 0.10) {
+    const base = layout.colorFeature || feature;
+    return {
+      energy: lerp(base.energy, feature.energy, liveMix),
+      low: lerp(base.low, feature.low, liveMix),
+      mid: lerp(base.mid, feature.mid, liveMix),
+      high: lerp(base.high, feature.high, liveMix),
+      centroid: lerp(base.centroid, feature.centroid, liveMix),
+      onset: feature.onset,
+      dominant: feature.dominant,
+      sectionIndex: feature.sectionIndex,
+      sectionPhase: feature.sectionPhase,
+    };
+  }
+
+  setPathBoxInstance(mesh, index, a, b, width, height, color) {
+    const { direction, midpoint, quaternion, scale, matrix } = this.tmp;
+    direction.subVectors(b, a);
+    const length = Math.max(0.0001, direction.length());
+    direction.normalize();
+    midpoint.addVectors(a, b).multiplyScalar(0.5);
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+    scale.set(Math.max(0.01, width), Math.max(0.01, height), length * 1.08);
+    matrix.compose(midpoint, quaternion, scale);
+    mesh.setMatrixAt(index, matrix);
+    mesh.setColorAt(index, color);
+  }
+
+  createSanctuaryRibbonSegment(a, b, widthA, widthB, thickness, color, foundation = false) {
+    const direction = b.clone().sub(a);
+    direction.y = 0;
+    if (direction.lengthSq() < 1e-8) return null;
+    direction.normalize();
+    const side = new THREE.Vector3(-direction.z, 0, direction.x);
+    const topAL = a.clone().addScaledVector(side, widthA * 0.5);
+    const topAR = a.clone().addScaledVector(side, -widthA * 0.5);
+    const topBL = b.clone().addScaledVector(side, widthB * 0.5);
+    const topBR = b.clone().addScaledVector(side, -widthB * 0.5);
+    const down = new THREE.Vector3(0, thickness, 0);
+    const bottomAL = topAL.clone().sub(down);
+    const bottomAR = topAR.clone().sub(down);
+    const bottomBL = topBL.clone().sub(down);
+    const bottomBR = topBR.clone().sub(down);
+    const points = [topAL, topAR, topBL, topBR, bottomAL, bottomAR, bottomBL, bottomBR];
+    const positions = new Float32Array(points.length * 3);
+    points.forEach((point, i) => point.toArray(positions, i * 3));
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex([
+      0, 2, 1, 1, 2, 3,
+      4, 5, 6, 5, 7, 6,
+      0, 4, 2, 2, 4, 6,
+      1, 3, 5, 3, 7, 5,
+      0, 1, 4, 1, 5, 4,
+      2, 6, 3, 3, 6, 7,
+    ]);
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: foundation ? 0.72 : 0.46,
+      metalness: foundation ? 0.035 : 0.12,
+      emissive: color.clone().multiplyScalar(this.palette.dark ? (foundation ? 0.012 : 0.035) : 0.006),
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    this.root.add(mesh);
+    this.sectionMeshes.push(mesh);
+    return mesh;
+  }
+
+  setBeamInstance(mesh, index, a, b, thickness, depth, color) {
+    const { direction, midpoint, quaternion, scale, matrix } = this.tmp;
+    direction.subVectors(b, a);
+    const length = Math.max(0.0001, direction.length());
+    direction.normalize();
+    midpoint.addVectors(a, b).multiplyScalar(0.5);
+    quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction);
+    scale.set(length, Math.max(0.01, thickness), Math.max(0.01, depth));
+    matrix.compose(midpoint, quaternion, scale);
+    mesh.setMatrixAt(index, matrix);
+    mesh.setColorAt(index, color);
+  }
+
+  setBoxAtInstance(mesh, index, position, size, quaternion, color) {
+    const { matrix } = this.tmp;
+    matrix.compose(position, quaternion, size);
+    mesh.setMatrixAt(index, matrix);
+    mesh.setColorAt(index, color);
+  }
+
+  commitInstance(mesh, count) {
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  orientSanctuaryGroup(group, flatTangent) {
+    const direction = flatTangent.clone();
+    direction.y = 0;
+    if (direction.lengthSq() < 1e-6) direction.set(1, 0, 0);
+    direction.normalize();
+    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+  }
+
+  createSanctuaryBay(feature, layout, progress, stepIndex, width, height, flatTangent) {
+    const group = new THREE.Group();
+    group.position.copy(this.point);
+    this.orientSanctuaryGroup(group, flatTangent);
+
+    const stable = this.sanctuaryFeature(layout, feature, 0.10);
+    const structuralColor = this.colorFor(stable, layout.centerProgress, -0.02).clone();
+    const upperColor = this.colorFor(stable, layout.centerProgress, 0.12).clone();
+    const glowColor = this.colorFor(feature, progress, 0.22).clone();
+    const structureMaterial = new THREE.MeshStandardMaterial({
+      color: structuralColor,
+      roughness: 0.38,
+      metalness: 0.20,
+      emissive: structuralColor.clone().multiplyScalar(this.palette.dark ? 0.045 : 0.012),
+    });
+    const upperMaterial = new THREE.MeshStandardMaterial({
+      color: upperColor,
+      roughness: 0.30,
+      metalness: 0.27,
+      emissive: upperColor.clone().multiplyScalar(this.palette.dark ? 0.07 : 0.018),
+    });
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
+      color: glowColor.clone().offsetHSL(0, -0.10, 0.06),
+      roughness: 0.16,
+      metalness: 0.06,
+      transmission: 0.16,
+      transparent: true,
+      opacity: this.palette.dark ? 0.42 : 0.32,
+      side: THREE.DoubleSide,
+    });
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color: glowColor,
+      roughness: 0.18,
+      metalness: 0.30,
+      emissive: glowColor.clone().multiplyScalar(this.palette.dark ? 0.24 : 0.05),
+      flatShading: true,
+    });
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+    const addBox = (position, scale, material = structureMaterial, rotation = null) => {
+      const mesh = new THREE.Mesh(boxGeometry, material);
+      mesh.position.copy(position);
+      mesh.scale.copy(scale);
+      if (rotation) mesh.rotation.set(rotation.x, rotation.y, rotation.z);
+      group.add(mesh);
+      return mesh;
+    };
+    const addBeam = (a, b, thicknessValue, depthValue, material = structureMaterial) => {
+      const direction = b.clone().sub(a);
+      const length = Math.max(0.001, direction.length());
+      const mesh = new THREE.Mesh(boxGeometry, material);
+      mesh.position.copy(a).add(b).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction.normalize());
+      mesh.scale.set(length, thicknessValue, depthValue);
+      group.add(mesh);
+      return mesh;
+    };
+    const addPillar = (x, pillarHeight, pillarWidth, z = 0, material = structureMaterial) => addBox(
+      new THREE.Vector3(x, pillarHeight * 0.5, z),
+      new THREE.Vector3(pillarWidth, pillarHeight, pillarWidth * 1.18),
+      material,
+    );
+
+    const motif = (layout.motif + Math.floor(feature.sectionPhase * 3.2)) % 4;
+    const pillarWidth = 0.18 + stable.low * 0.16;
+    const half = width * 0.46;
+
+    if (motif === 0) {
+      // A rounded arch: the most architectural bay, used sparsely.
+      addPillar(-half, height * 0.66, pillarWidth);
+      addPillar(half, height * 0.66, pillarWidth);
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-half, height * 0.58, 0),
+        new THREE.Vector3(-half * 0.78, height * 0.83, 0),
+        new THREE.Vector3(-half * 0.38, height * 1.01, 0),
+        new THREE.Vector3(0, height * 1.08, 0),
+        new THREE.Vector3(half * 0.38, height * 1.01, 0),
+        new THREE.Vector3(half * 0.78, height * 0.83, 0),
+        new THREE.Vector3(half, height * 0.58, 0),
+      ], false, 'catmullrom', 0.48);
+      const arch = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, 34, 0.075 + stable.low * 0.055, 7, false),
+        upperMaterial,
+      );
+      group.add(arch);
+      const pendant = new THREE.Mesh(new THREE.OctahedronGeometry(0.22 + feature.high * 0.14, 0), glowMaterial);
+      pendant.position.set(0, height * 0.70, 0);
+      pendant.scale.y = 1.45 + feature.high * 0.55;
+      group.add(pendant);
+    } else if (motif === 1) {
+      // A vaulted frame with a lifted roof line rather than another rectangular cage.
+      const apex = new THREE.Vector3(0, height * 1.04, 0);
+      const leftKnee = new THREE.Vector3(-half, height * 0.60, 0);
+      const rightKnee = new THREE.Vector3(half, height * 0.60, 0);
+      addPillar(-half, height * 0.60, pillarWidth * 0.90);
+      addPillar(half, height * 0.60, pillarWidth * 0.90);
+      addBeam(leftKnee, apex, 0.12 + feature.onset * 0.07, 0.16, upperMaterial);
+      addBeam(apex, rightKnee, 0.12 + feature.onset * 0.07, 0.16, upperMaterial);
+      addBeam(new THREE.Vector3(-half * 0.84, height * 0.62, 0), new THREE.Vector3(half * 0.84, height * 0.62, 0), 0.075, 0.12, structureMaterial);
+      addBeam(new THREE.Vector3(-half * 1.16, 0, 0), new THREE.Vector3(-half, height * 0.58, 0), 0.08, 0.12, structureMaterial);
+      addBeam(new THREE.Vector3(half * 1.16, 0, 0), new THREE.Vector3(half, height * 0.58, 0), 0.08, 0.12, structureMaterial);
+    } else if (motif === 2) {
+      // Thin translucent fins turn treble energy into light rather than more columns.
+      const finCount = 4;
+      for (let i = 0; i < finCount; i++) {
+        const sideSign = i < 2 ? -1 : 1;
+        const inner = i % 2;
+        const x = sideSign * width * (inner ? 0.28 : 0.46);
+        const finHeight = height * (0.54 + inner * 0.22 + stable.high * 0.12);
+        addBox(
+          new THREE.Vector3(x, finHeight * 0.50, (inner ? 0.10 : -0.08) * sideSign),
+          new THREE.Vector3(0.055 + stable.high * 0.045, finHeight, 0.48 + stable.mid * 0.34),
+          glassMaterial,
+          new THREE.Euler(0, sideSign * (0.12 + inner * 0.10), sideSign * (0.07 + stable.high * 0.08)),
+        );
+      }
+      addBeam(new THREE.Vector3(-half * 0.78, height * 0.84, 0), new THREE.Vector3(half * 0.78, height * 0.84, 0), 0.09, 0.13, upperMaterial);
+      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.18 + stable.high * 0.16, 0), glowMaterial);
+      crystal.position.set(0, height * 0.64, 0);
+      crystal.scale.set(0.72, 1.55 + stable.high * 0.55, 0.72);
+      group.add(crystal);
+    } else {
+      // A resonant halo opens the corridor into a room-like threshold.
+      addPillar(-half * 0.92, height * 0.46, pillarWidth * 0.82);
+      addPillar(half * 0.92, height * 0.46, pillarWidth * 0.82);
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.055 + stable.high * 0.025, 8, 54), glassMaterial);
+      halo.position.set(0, height * 0.62, 0);
+      halo.scale.set(width * 0.30, height * 0.31, 1);
+      group.add(halo);
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.18 + feature.onset * 0.14, 18, 12), glowMaterial);
+      core.position.set(0, height * 0.62, 0);
+      group.add(core);
+      addBeam(new THREE.Vector3(-half * 0.72, height * 0.24, 0), new THREE.Vector3(half * 0.72, height * 0.24, 0), 0.07, 0.11, structureMaterial);
+    }
+
+    this.root.add(group);
+    this.sectionMeshes.push(group);
+    const sideVector = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x);
+    this.expandBounds(this.point.clone().addScaledVector(sideVector, width * 0.66).add(new THREE.Vector3(0, height * 1.15, 0)));
+    this.expandBounds(this.point.clone().addScaledVector(sideVector, -width * 0.66).add(new THREE.Vector3(0, -0.35, 0)));
+  }
+
+  createSanctuaryLandmark(feature, layout, progress, flatTangent, width, height) {
+    const group = new THREE.Group();
+    group.position.copy(this.point);
+    this.orientSanctuaryGroup(group, flatTangent);
+    const stable = this.sanctuaryFeature(layout, feature, 0.06);
+    const baseColor = this.colorFor(stable, layout.centerProgress, -0.03).clone();
+    const glowColor = this.colorFor(feature, progress, 0.24).clone();
+    const baseMaterial = new THREE.MeshStandardMaterial({
+      color: baseColor,
+      roughness: 0.34,
+      metalness: 0.24,
+      emissive: baseColor.clone().multiplyScalar(this.palette.dark ? 0.06 : 0.015),
+    });
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color: glowColor,
+      roughness: 0.16,
+      metalness: 0.28,
+      emissive: glowColor.clone().multiplyScalar(this.palette.dark ? 0.34 : 0.07),
+      flatShading: true,
+    });
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
+      color: glowColor.clone().offsetHSL(0, -0.12, 0.08),
+      roughness: 0.12,
+      metalness: 0.05,
+      transmission: 0.22,
+      transparent: true,
+      opacity: this.palette.dark ? 0.48 : 0.35,
+      side: THREE.DoubleSide,
+    });
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const plinth = new THREE.Mesh(boxGeometry, baseMaterial);
+    plinth.position.set(0, 0.22, 0);
+    plinth.scale.set(width * 0.48, 0.34 + stable.low * 0.22, 1.2 + stable.energy * 0.55);
+    group.add(plinth);
+
+    if (layout.motif === 0) {
+      for (let i = 0; i < 3; i++) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.045 + i * 0.012, 8, 58), i === 1 ? glowMaterial : glassMaterial);
+        ring.position.set(0, height * (0.44 + i * 0.06), 0);
+        ring.scale.set(width * (0.18 + i * 0.055), height * (0.20 + i * 0.045), 1);
+        ring.rotation.y = (i - 1) * 0.32;
+        ring.rotation.x = (i - 1) * 0.16;
+        group.add(ring);
+      }
+      const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.30 + stable.energy * 0.24, 1), glowMaterial);
+      core.position.set(0, height * 0.56, 0);
+      group.add(core);
+    } else if (layout.motif === 1) {
+      const count = 5;
+      for (let i = 0; i < count; i++) {
+        const x = (i / (count - 1) - 0.5) * width * 0.58;
+        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.24 + stable.high * 0.16, 0), i % 2 ? glassMaterial : glowMaterial);
+        crystal.position.set(x, 0.72 + Math.sin(i * 1.7 + layout.phase) * 0.28 + (i % 2) * 0.45, 0);
+        crystal.scale.set(0.72, 1.6 + stable.mid * 1.35 + (i % 3) * 0.34, 0.72);
+        group.add(crystal);
+      }
+    } else if (layout.motif === 2) {
+      const stem = new THREE.Mesh(boxGeometry, baseMaterial);
+      stem.position.set(0, height * 0.34, 0);
+      stem.scale.set(0.16 + stable.low * 0.12, height * 0.62, 0.18);
+      group.add(stem);
+      for (let i = 0; i < 5; i++) {
+        const angle = -0.95 + i * 0.48;
+        const length = width * (0.22 + (i % 2) * 0.07);
+        const a = new THREE.Vector3(0, height * (0.34 + i * 0.075), 0);
+        const b = new THREE.Vector3(Math.sin(angle) * length, a.y + Math.cos(angle) * length * 0.55, 0);
+        const direction = b.clone().sub(a);
+        const beam = new THREE.Mesh(boxGeometry, baseMaterial);
+        beam.position.copy(a).add(b).multiplyScalar(0.5);
+        beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction.clone().normalize());
+        beam.scale.set(direction.length(), 0.08, 0.10);
+        group.add(beam);
+        const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.13 + stable.high * 0.08, 14, 10), glowMaterial);
+        pearl.position.copy(b);
+        group.add(pearl);
+      }
+    } else {
+      for (let i = 0; i < 2; i++) {
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.055 + i * 0.018, 8, 56), i ? glowMaterial : glassMaterial);
+        halo.position.set(0, height * (0.50 + i * 0.05), 0);
+        halo.scale.set(width * (0.26 + i * 0.08), height * (0.30 + i * 0.06), 1);
+        group.add(halo);
+      }
+      const slab = new THREE.Mesh(boxGeometry, baseMaterial);
+      slab.position.set(0, height * 0.34, 0.08);
+      slab.scale.set(width * 0.18, height * 0.56, 0.16);
+      group.add(slab);
+    }
+
+    const light = new THREE.PointLight(glowColor, this.palette.dark ? 1.5 : 0.75, 14, 2);
+    light.position.set(0, height * 0.58, 1.2);
+    group.add(light);
+    this.root.add(group);
+    this.sectionMeshes.push(group);
+    const sideVector = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x);
+    this.expandBounds(this.point.clone().addScaledVector(sideVector, width * 0.52).add(new THREE.Vector3(0, height * 0.98, 0)));
+    this.expandBounds(this.point.clone().addScaledVector(sideVector, -width * 0.52).add(new THREE.Vector3(0, -0.45, 0)));
+  }
+
+  createSanctuaryGate(feature, layout, progress) {
+    const width = layout.width * (0.88 + feature.low * 0.22);
+    const height = layout.height * (0.90 + feature.mid * 0.18);
+    const group = new THREE.Group();
+    group.position.copy(this.point);
+    const flatTangent = this.tangent.clone();
+    flatTangent.y = 0;
+    if (flatTangent.lengthSq() < 1e-6) flatTangent.set(1, 0, 0);
+    flatTangent.normalize();
+    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatTangent);
+
+    const color = this.colorFor(feature, progress, 0.08).clone();
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.36, metalness: 0.20, emissive: color.clone().multiplyScalar(this.palette.dark ? 0.10 : 0.025) });
+    const glassMaterial = new THREE.MeshPhysicalMaterial({ color: color.clone().offsetHSL(0, -0.12, 0.12), roughness: 0.18, metalness: 0.08, transmission: 0.10, transparent: true, opacity: 0.54, side: THREE.DoubleSide });
+    const pillarGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const pillarW = 0.22 + feature.low * 0.18;
+    for (const side of [-1, 1]) {
+      const pillar = new THREE.Mesh(pillarGeometry, material);
+      pillar.position.set(side * width * 0.48, height * 0.5, 0);
+      pillar.scale.set(pillarW, height, pillarW * 1.45);
+      group.add(pillar);
+    }
+    const lintel = new THREE.Mesh(pillarGeometry, material);
+    lintel.position.set(0, height, 0);
+    lintel.scale.set(width + pillarW * 2, 0.20 + feature.onset * 0.18, 0.28 + feature.low * 0.16);
+    group.add(lintel);
+
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.045 + feature.high * 0.028, 8, 46), glassMaterial);
+    halo.position.set(0, height * 0.56, 0.05);
+    halo.scale.set(width * 0.38, height * 0.36, 1);
+    group.add(halo);
+
+    this.root.add(group);
+    this.sectionMeshes.push(group);
+    const sideVector = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x);
+    this.expandBounds(this.point.clone().addScaledVector(sideVector, width * 0.62).add(new THREE.Vector3(0, height * 1.12, 0)));
+    this.expandBounds(this.point.clone().addScaledVector(sideVector, -width * 0.62).add(new THREE.Vector3(0, -0.6, 0)));
+  }
+
   generate(time, feature, stepIndex) {
+    if (this.styleKey === 'sanctuary') this.generateSanctuary(time, feature, stepIndex);
+    else this.generateGrowth(time, feature, stepIndex);
+  }
+
+  generateSanctuary(time, feature, stepIndex) {
+    if (!this.floors || this.floorCount >= this.floors.instanceMatrix.count) return;
+    const progress = clamp(time / this.duration);
+    const dx = this.totalLength / Math.max(1, this.maxSteps - 1);
+    const layout = this.sanctuaryLayouts[feature.sectionIndex] || {
+      heading: 0, floorY: 0, width: 5, height: 5.5, bayGap: 7, motif: 0, phase: 0,
+    };
+
+    const headingNoise = (valueNoise1D(progress * (3.4 + this.complexity), this.seed, 1120 + feature.sectionIndex) - 0.5) * (0.12 + feature.high * 0.08);
+    const targetHeading = layout.heading + headingNoise + (feature.centroid - 0.5) * 0.045;
+    let deltaHeading = targetHeading - this.sanctuaryHeading;
+    while (deltaHeading > Math.PI) deltaHeading -= TAU;
+    while (deltaHeading < -Math.PI) deltaHeading += TAU;
+    this.sanctuaryHeading += deltaHeading * (0.048 + feature.onset * 0.026);
+
+    const targetY = layout.floorY + (feature.low - feature.high) * 0.22 + (valueNoise1D(progress * 5.2, this.seed, 1121) - 0.5) * 0.24;
+    const stepY = (targetY - this.point.y) * 0.055;
+    this.prevPoint.copy(this.point);
+    this.point.add(new THREE.Vector3(Math.cos(this.sanctuaryHeading) * dx, stepY, Math.sin(this.sanctuaryHeading) * dx));
+    this.tangent.subVectors(this.point, this.prevPoint).normalize();
+
+    const flatTangent = this.tangent.clone();
+    flatTangent.y = 0;
+    if (flatTangent.lengthSq() < 1e-6) flatTangent.set(1, 0, 0);
+    flatTangent.normalize();
+    const side = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x);
+    const width = layout.width * (0.78 + feature.low * 0.30 + feature.energy * 0.08);
+    const thickness = 0.14 + feature.low * 0.22 + feature.energy * 0.08;
+    const stableFeature = this.sanctuaryFeature(layout, feature, 0.08);
+    const floorColor = this.colorFor(stableFeature, layout.centerProgress, -0.12).clone();
+    const foundationColor = this.colorFor(stableFeature, layout.centerProgress, -0.22).clone();
+
+    const floorStride = Math.max(4, Math.round(8 - this.complexity * 2));
+    const shouldLayFloor = stepIndex === 0 || stepIndex - this.lastFloorStep >= floorStride || progress > 0.997;
+    if (shouldLayFloor && this.floorCount < this.maxSteps) {
+      const floorA = this.sanctuaryFloorAnchor.clone();
+      const floorB = this.point.clone();
+      this.createSanctuaryRibbonSegment(
+        floorA, floorB,
+        this.sanctuaryFloorWidth, width,
+        thickness, floorColor, false,
+      );
+      this.floorCount++;
+
+      const depth = 0.34 + feature.low * 0.72;
+      const foundationA = floorA.clone().add(new THREE.Vector3(0, -thickness, 0));
+      const foundationB = floorB.clone().add(new THREE.Vector3(0, -thickness, 0));
+      const baseScale = 0.80 + feature.low * 0.10;
+      this.createSanctuaryRibbonSegment(
+        foundationA, foundationB,
+        this.sanctuaryFloorWidth * baseScale, width * baseScale,
+        depth, foundationColor, true,
+      );
+      this.foundationCount++;
+
+      this.sanctuaryFloorAnchor.copy(this.point);
+      this.sanctuaryFloorWidth = width;
+      this.lastFloorStep = stepIndex;
+    }
+
+    const leftEdge = this.point.clone().addScaledVector(side, width * 0.54);
+    const rightEdge = this.point.clone().addScaledVector(side, -width * 0.54);
+    this.expandBounds(leftEdge.clone().add(new THREE.Vector3(0, -1.4, 0)));
+    this.expandBounds(rightEdge.clone().add(new THREE.Vector3(0, -1.4, 0)));
+
+    if (feature.sectionIndex !== this.lastSection) {
+      this.createSanctuaryGate(feature, layout, progress);
+      this.lastSection = feature.sectionIndex;
+      this.lastBayStep = stepIndex - layout.bayGap;
+    }
+
+    if (!layout.landmarkDrawn && feature.sectionPhase >= 0.48) {
+      const landmarkHeight = layout.height * (0.92 + feature.mid * 0.14);
+      this.createSanctuaryLandmark(feature, layout, progress, flatTangent, width, landmarkHeight);
+      layout.landmarkDrawn = true;
+      this.lastBayStep = stepIndex;
+    }
+
+    const bayGap = Math.max(9, layout.bayGap - (feature.onset > 0.78 ? 1 : 0));
+    const baySignal = feature.onset * 0.56 + feature.mid * 0.24 + feature.energy * 0.20;
+    if (stepIndex - this.lastBayStep >= bayGap && (baySignal > 0.34 || stepIndex % bayGap === 0)) {
+      const height = layout.height * (0.78 + feature.mid * 0.26 + feature.energy * 0.08);
+      this.createSanctuaryBay(feature, layout, progress, stepIndex, width, height, flatTangent);
+      this.lastBayStep = stepIndex;
+    }
+
+    const panelSignal = feature.high * 0.78 + feature.onset * 0.22;
+    if (panelSignal > 0.66 && randAt(this.seed, stepIndex, 1130) < panelSignal * (0.07 + this.complexity * 0.035)) {
+      const count = feature.high > 0.78 && this.complexity > 1.05 ? 2 : 1;
+      for (let i = 0; i < count && this.panelCount < this.panels.instanceMatrix.count; i++) {
+        const sideSign = (i + stepIndex) % 2 ? -1 : 1;
+        const panelPos = this.point.clone()
+          .addScaledVector(side, sideSign * width * (0.31 + randAt(this.seed, stepIndex + i, 1131) * 0.17))
+          .add(new THREE.Vector3(0, 0.9 + feature.high * 2.6 + randAt(this.seed, stepIndex + i, 1132) * 1.2, 0));
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatTangent);
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sideSign * (0.12 + randAt(this.seed, stepIndex + i, 1133) * 0.28)));
+        const size = new THREE.Vector3(0.06 + feature.high * 0.10, 0.62 + feature.high * 1.55, 0.52 + feature.mid * 0.72);
+        this.setBoxAtInstance(this.panels, this.panelCount, panelPos, size, q, this.colorFor(stableFeature, layout.centerProgress, 0.18).clone());
+        this.panelCount++;
+        this.expandBounds(panelPos.clone().add(new THREE.Vector3(0, size.y, 0)));
+      }
+      this.commitInstance(this.panels, this.panelCount);
+    }
+
+    if (feature.low > 0.58 && feature.onset > 0.58 && randAt(this.seed, stepIndex, 1140) < feature.onset * 0.34 && this.panelCount < this.panels.instanceMatrix.count) {
+      const altarPos = this.point.clone().add(new THREE.Vector3(0, 0.28 + feature.low * 0.22, 0));
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatTangent);
+      const size = new THREE.Vector3(width * 0.34, 0.34 + feature.low * 0.42, 0.52 + feature.onset * 0.72);
+      this.setBoxAtInstance(this.panels, this.panelCount, altarPos, size, q, this.colorFor(stableFeature, layout.centerProgress, 0.04).clone());
+      this.panelCount++;
+      this.commitInstance(this.panels, this.panelCount);
+      this.expandBounds(altarPos.clone().add(new THREE.Vector3(0, size.y, 0)));
+    }
+
+    this.tip.position.copy(this.point).add(new THREE.Vector3(0, 0.35, 0));
+    this.tip.scale.setScalar(0.78 + feature.onset * 1.30);
+    this.tip.material.color.copy(this.colorFor(feature, progress, 0.24));
+    this.tipLight.position.copy(this.point).add(new THREE.Vector3(0, 3.0, 2.2));
+    this.tipLight.color.copy(this.tip.material.color);
+  }
+
+  generateGrowth(time, feature, stepIndex) {
     if (!this.trunk || this.trunkCount >= this.trunk.instanceMatrix.count) return;
     const progress = clamp(time / this.duration);
     const dx = this.totalLength / Math.max(1, this.maxSteps - 1);
@@ -1458,18 +2527,20 @@ class Sculpture3D {
     const size = this.bounds.getSize(new THREE.Vector3());
     const radius = Math.max(4.5, size.length() * 0.5);
     const fov = THREE.MathUtils.degToRad(this.camera.fov);
-    const fitDistance = Math.max(15, radius / Math.sin(fov / 2) * 1.12);
+    const fitDistance = Math.max(13, radius / Math.sin(fov / 2) * (this.styleKey === 'sanctuary' ? 0.79 : 0.96));
     let desiredPosition;
     let desiredTarget;
     if (this.cameraMode === 'overview') {
-      desiredPosition = center.clone().add(new THREE.Vector3(fitDistance * 0.72, fitDistance * 0.42, fitDistance * 0.86));
+      const viewDirection = new THREE.Vector3(0.82, 0.46, 1.0).normalize();
+      desiredPosition = center.clone().addScaledVector(viewDirection, fitDistance * 0.92);
       desiredTarget = center;
     } else {
       // Ahead of the growth tangent, looking back through the current tip and the accumulated work.
-      const ahead = this.tangent.clone().multiplyScalar(fitDistance * 0.72);
-      const side = new THREE.Vector3(0, fitDistance * 0.19 + 2.5, fitDistance * 0.40 + 5);
-      desiredPosition = this.point.clone().add(ahead).add(side);
-      desiredTarget = center.clone().lerp(this.point, 0.48);
+      const ahead = this.tangent.clone().multiplyScalar(fitDistance * (this.styleKey === 'sanctuary' ? 0.46 : 0.64));
+      const up = new THREE.Vector3(0, fitDistance * (this.styleKey === 'sanctuary' ? 0.18 : 0.20) + 2.0, 0);
+      const lateral = new THREE.Vector3(-this.tangent.z, 0, this.tangent.x).multiplyScalar(fitDistance * (this.styleKey === 'sanctuary' ? 0.28 : 0.34));
+      desiredPosition = this.point.clone().add(ahead).add(up).add(lateral);
+      desiredTarget = center.clone().lerp(this.point, this.styleKey === 'sanctuary' ? 0.64 : 0.48);
     }
     const smoothing = 1 - Math.exp(-dt * 2.1);
     this.camera.position.lerp(desiredPosition, smoothing);
@@ -1516,6 +2587,9 @@ const els = {
   paintingStyleSelect: document.querySelector('#paintingStyleSelect'),
   paintingStyleSetting: document.querySelector('#paintingStyleSetting'),
   paintingStyleDescription: document.querySelector('#paintingStyleDescription'),
+  sculptureStyleSelect: document.querySelector('#sculptureStyleSelect'),
+  sculptureStyleSetting: document.querySelector('#sculptureStyleSetting'),
+  sculptureStyleDescription: document.querySelector('#sculptureStyleDescription'),
   complexity: document.querySelector('#complexity'),
   complexityValue: document.querySelector('#complexityValue'),
   cameraBtn: document.querySelector('#cameraBtn'),
@@ -1553,6 +2627,7 @@ const state = {
   seed: Math.floor(Math.random() * 0xffffffff) >>> 0,
   paletteKey: 'aurora',
   paintingStyleKey: 'painterly',
+  sculptureStyleKey: 'sanctuary',
   complexity: 1,
   visualStep: 0.09,
   generatedStep: -1,
@@ -1673,6 +2748,7 @@ function configureVisuals() {
     palette: PALETTES[state.paletteKey],
     complexity: state.complexity,
     paintingStyleKey: state.paintingStyleKey,
+    sculptureStyleKey: state.sculptureStyleKey,
     stepDuration: state.visualStep,
   };
   painting.configure(config);
@@ -1762,6 +2838,13 @@ function updatePaintingStyleUI() {
   els.stage.dataset.paintingStyle = state.paintingStyleKey;
 }
 
+function updateSculptureStyleUI() {
+  const style = SCULPTURE_STYLES[state.sculptureStyleKey] || SCULPTURE_STYLES.growth;
+  if (els.sculptureStyleSelect) els.sculptureStyleSelect.value = state.sculptureStyleKey;
+  if (els.sculptureStyleDescription) els.sculptureStyleDescription.textContent = style.description;
+  els.stage.dataset.sculptureStyle = state.sculptureStyleKey;
+}
+
 function updateModeUI() {
   if (state.mode === '3d' && !webglAvailable) {
     state.mode = '2d';
@@ -1774,20 +2857,24 @@ function updateModeUI() {
   }
   els.stage.dataset.mode = state.mode;
   const paintingStyle = PAINTING_STYLES[state.paintingStyleKey] || PAINTING_STYLES.trace;
+  const sculptureStyle = SCULPTURE_STYLES[state.sculptureStyleKey] || SCULPTURE_STYLES.growth;
   if (state.mode === '2d') {
     els.modeHint.textContent = paintingStyle.hint;
     els.stylePill.textContent = paintingStyle.label;
     els.mappingRules.innerHTML = paintingStyle.mappingHtml;
     els.paintingStyleSetting.hidden = false;
+    els.sculptureStyleSetting.hidden = true;
   } else {
-    els.modeHint.textContent = '结构沿时间连续生长，生成后不移动、不消失';
-    els.stylePill.textContent = '3D · 音乐建筑';
-    els.mappingRules.innerHTML = '时间 → 生长距离<br>低频 → 主体与地基<br>中频 → 空间路径<br>高频 → 分支与晶体<br>瞬态 → 节点与结构重音<br>段落 → 建筑转折与空间环';
+    els.modeHint.textContent = sculptureStyle.hint;
+    els.stylePill.textContent = sculptureStyle.label;
+    els.mappingRules.innerHTML = sculptureStyle.mappingHtml;
     els.paintingStyleSetting.hidden = true;
+    els.sculptureStyleSetting.hidden = false;
   }
   els.cameraBtn.hidden = state.mode !== '3d' || !webglAvailable;
   els.exportBtn.querySelector('span').textContent = state.mode === '2d' ? '导出画作' : '导出视图';
   updatePaintingStyleUI();
+  updateSculptureStyleUI();
   if (state.mode === '3d') sculpture.resize();
 }
 function updateSeedUI() {
@@ -2013,7 +3100,8 @@ async function exportArtwork() {
     downloadBlob(blob, `${baseName}_2D_${style.exportName}_${els.seedValue.textContent}.png`);
   } else {
     const blob = await sculpture.exportPng();
-    downloadBlob(blob, `${baseName}_3D_${els.seedValue.textContent}.png`);
+    const style = SCULPTURE_STYLES[state.sculptureStyleKey] || SCULPTURE_STYLES.growth;
+    downloadBlob(blob, `${baseName}_3D_${style.exportName}_${els.seedValue.textContent}.png`);
   }
   toast('已导出当前作品视图');
 }
@@ -2057,6 +3145,24 @@ function bindEvents() {
     }
     if (wasPlaying) await play();
     toast(`已切换到${PAINTING_STYLES[nextStyle].label}`);
+  });
+
+  els.sculptureStyleSelect.addEventListener('change', async () => {
+    const nextStyle = els.sculptureStyleSelect.value;
+    if (!SCULPTURE_STYLES[nextStyle] || nextStyle === state.sculptureStyleKey) return;
+    const wasPlaying = state.isPlaying;
+    if (wasPlaying) pause();
+    state.sculptureStyleKey = nextStyle;
+    updateModeUI();
+    if (state.analysis) {
+      configureVisuals();
+      await rebuildTo(state.currentTime, state.duration > 600);
+    } else {
+      sculpture.styleKey = nextStyle;
+      sculpture.applyPalette();
+    }
+    if (wasPlaying) await play();
+    toast(`已切换到${SCULPTURE_STYLES[nextStyle].label}`);
   });
 
   els.paletteSelect.addEventListener('change', async () => {
@@ -2158,6 +3264,7 @@ async function init() {
   updateSeedUI();
   updatePlayUI();
   updatePaintingStyleUI();
+  updateSculptureStyleUI();
   updateModeUI();
   updateCameraModeUI();
   painting.resize();
@@ -2170,9 +3277,13 @@ async function init() {
   const params = new URLSearchParams(location.search);
   if (params.has('preview')) {
     const mode = params.get('preview') === '2d' ? '2d' : '3d';
+    const requested2d = params.get('style2d');
+    const requested3d = params.get('style3d');
+    if (requested2d && PAINTING_STYLES[requested2d]) state.paintingStyleKey = requested2d;
+    if (requested3d && SCULPTURE_STYLES[requested3d]) state.sculptureStyleKey = requested3d;
     state.mode = mode;
     updateModeUI();
-    await loadDemo(false, mode === '2d' ? 0.88 : 0.72);
+    await loadDemo(false, mode === '2d' ? 0.94 : 0.88);
   }
 }
 
