@@ -1,0 +1,39 @@
+name: Build standalone prototype
+
+on:
+  push:
+    branches:
+      - new-function
+    paths:
+      - 'src/**'
+      - 'build.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-standalone.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: new-function
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - name: Commit standalone HTML
+        run: |
+          if git diff --quiet -- '音乐画布_2D+3D原型.html'; then
+            echo 'Standalone HTML is already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '音乐画布_2D+3D原型.html'
+          git commit -m 'build: refresh standalone prototype [skip ci]'
+          git push origin HEAD:new-function
